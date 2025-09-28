@@ -1,4 +1,4 @@
-# BimanGrasp-Dataset
+# BimanGrasp-Generation
 This is the official repository for the open-source implementation of the BimanGrasp Algorithm for synthesizing bimanual grasps on 3D objects of our RA-L and ICRA 2025 paper:
 
 <p align="center">
