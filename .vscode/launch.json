@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Launch main.py",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}/BimanGrasp-Optimization",
+      "console": "integratedTerminal",
+      // "args": ["--object_code", "sem_Wii_effdc659515ff747eb2c6725049f8f", "--num", "2"]
+    }
+  ]
+}

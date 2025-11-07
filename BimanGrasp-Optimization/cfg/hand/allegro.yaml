@@ -1,0 +1,9 @@
+paths:
+  right_hand_mjcf: "mjcf/allegro/allegro_right.xml"
+  right_hand_vis_mjcf: "mjcf/allegro/allegro_right.xml"
+  left_hand_mjcf: "mjcf/allegro/allegro_left.xml"
+  left_hand_vis_mjcf: "mjcf/allegro/allegro_left.xml"
+  mesh_path: "mjcf/allegro/meshes"
+  right_contact_points: "mjcf/allegro/contact_points.json"
+  left_contact_points: "mjcf/allegro/contact_points.json"
+  penetration_points: "mjcf/allegro/penetration_points.json"

@@ -1,0 +1,61 @@
+# Generated from utils/config.py defaults
+name: "debug"
+seed: 1
+gpu: "0"
+
+defaults:
+  - _self_
+  - hand: shadow
+
+object_code_list:
+  - "sem_Wii_effdc659515ff747eb2c6725049f8f"
+  - "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
+
+paths:
+  right_hand_mjcf: 
+  right_hand_vis_mjcf:
+  left_hand_mjcf: 
+  left_hand_vis_mjcf:
+  mesh_path: 
+  right_contact_points: 
+  left_contact_points: 
+  penetration_points:
+  data_root_path: "../data/object/DGN_2k/processed_data"
+  experiments_base: "../data/experiments"
+  results_base: "data/graspdata"
+
+energy:
+  w_dis: 100.0
+  w_pen: 125.0
+  w_spen: 10.0
+  w_joints: 1.0
+  w_vew: 0.5
+  thres_fc: 0.45
+  thres_dis: 0.005
+  thres_pen: 0.001
+
+optimizer:
+  switch_possibility: 0.5
+  starting_temperature: 18
+  temperature_decay: 0.95
+  annealing_period: 30
+  step_size: 0.005
+  stepsize_period: 50
+  momentum: 0.98
+  num_iterations: 10000
+
+initialization:
+  distance_lower: 0.2
+  distance_upper: 0.3
+  theta_lower: -0.5235987755982988   # -pi/6
+  theta_upper: 0.5235987755982988    # pi/6
+  jitter_strength: 0.1
+  num_contacts: 4
+
+model:
+  n_surface_points: 2000
+  num_samples: 2000
+  size: "large"
+  batch_size: 128
+  batch_size_each: 5
+  max_total_batch_size: 100

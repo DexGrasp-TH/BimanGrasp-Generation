@@ -64,7 +64,7 @@ You can install everything step by step.
 
    ```bash
    conda install -c conda-forge transforms3d trimesh plotly rtree -y
-   pip install urdf_parser_py scipy networkx tensorboard six
+   pip install urdf_parser_py scipy networkx tensorboard six omegaconf hydra-core
    ```
 
 5. **Build and install TorchSDF**

@@ -1,6 +1,7 @@
 <mujoco model="MuJoCo Model">
-    <compiler angle="radian" meshdir="./mjcf/meshes/" texturedir="./mjcf/textures/" />
-    <option apirate="200" iterations="20" />
+    <compiler angle="radian" meshdir="./mjcf/shadow/meshes/" texturedir="./mjcf/shadow/textures/" />
+    <!-- <compiler angle="radian" meshdir="meshes/" texturedir="textures/" /> -->
+    <option apirate="200" iterations="20" gravity="0 0 0" />
     <size njmax="500" nconmax="100" nstack="600000" nuser_jnt="1" nuser_site="1" nuser_tendon="1" nuser_actuator="16" nuser_sensor="1" />
     <visual>
         <map force="0.1" fogend="5" />
@@ -17,6 +18,7 @@
         </default>
         <default class="robot0:DC_Hand">
             <geom conaffinity="0" group="4" material="robot0:MatColl" />
+            <!-- <geom contype="0" conaffinity="0" material="robot0:MatColl" /> -->
         </default>
         <default class="robot0:free">
             <joint type="free" />
@@ -142,7 +144,6 @@
                         <body name="robot0:thbase" pos="0.034 -0.009 0.029" quat="0.923956 0 0.382499 0">
                             <inertial pos="0 0 0" mass="0.01" diaginertia="1e-05 1e-05 1e-05" />
                             <joint name="robot0:THJ4" pos="0 0 0" axis="0 0 -1" range="-1.047 1.047" user="1121" />
-                            <geom name="robot0:V_thbase" size="0.001 0.001 0.001" type="box" group="1" />
                             <body name="robot0:thproximal" pos="0 0 0">
                                 <inertial pos="0 0 0.017" quat="0.981604 0 0.000999597 0.190923" mass="0.016" diaginertia="1e-05 1e-05 1e-05" />
                                 <joint name="robot0:THJ3" pos="0 0 0" axis="1 0 0" range="0 1.222" user="1120" />
@@ -150,7 +151,6 @@
                                 <body name="robot0:thhub" pos="0 0 0.038">
                                     <inertial pos="0 0 0" mass="0.002" diaginertia="1e-05 1e-05 1e-05" />
                                     <joint name="robot0:THJ2" pos="0 0 0" axis="1 0 0" range="-0.209 0.209" user="1119" />
-                                    <geom name="robot0:V_thhub" size="0.001 0.001 0.001" type="box" group="1" />
                                     <body name="robot0:thmiddle" pos="0 0 0">
                                         <inertial pos="0 0 0.016" quat="0.999971 -0.000999971 -0.00699979 0.00299991" mass="0.016" diaginertia="1e-05 1e-05 1e-05" />
                                         <joint name="robot0:THJ1" pos="0 0 0" axis="0 1 0" range="-0.524 0.524" user="1118" />
@@ -208,8 +208,6 @@
         </fixed>
     </tendon>
     <actuator>
-        <general name="robot0:A_WRJ1" class="robot0:asset_class" joint="robot0:WRJ1" ctrlrange="-0.489 0.14" forcerange="-4.785 4.785" biastype="affine" gainprm="5 0 0 0 0 0 0 0 0 0" biasprm="0 -5 0 0 0 0 0 0 0 0" user="2038 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
-        <general name="robot0:A_WRJ0" class="robot0:asset_class" joint="robot0:WRJ0" ctrlrange="-0.698 0.489" forcerange="-2.175 2.175" biastype="affine" gainprm="5 0 0 0 0 0 0 0 0 0" biasprm="0 -5 0 0 0 0 0 0 0 0" user="2036 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
         <general name="robot0:A_FFJ3" class="robot0:asset_class" joint="robot0:FFJ3" ctrlrange="-0.349 0.349" forcerange="-0.9 0.9" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2004 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
         <general name="robot0:A_FFJ2" class="robot0:asset_class" joint="robot0:FFJ2" ctrlrange="0 1.571" forcerange="-0.9 0.9" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2002 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
         <general name="robot0:A_FFJ1" class="robot0:asset_class" joint="robot0:FFJ1" ctrlrange="0 1.571" forcerange="-0.7245 0.7245" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
@@ -230,8 +228,6 @@
         <general name="robot0:A_THJ0" class="robot0:asset_class" joint="robot0:THJ0" ctrlrange="-1.571 0" forcerange="-0.81 0.81" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2026 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
     </actuator>
     <sensor>
-        <jointpos joint="robot0:WRJ1" name="robot0:Sjp_WRJ1" />
-        <jointpos joint="robot0:WRJ0" name="robot0:Sjp_WRJ0" />
         <jointpos joint="robot0:FFJ3" name="robot0:Sjp_FFJ3" />
         <jointpos joint="robot0:FFJ2" name="robot0:Sjp_FFJ2" />
         <jointpos joint="robot0:FFJ1" name="robot0:Sjp_FFJ1" />

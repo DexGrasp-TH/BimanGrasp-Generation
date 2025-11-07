@@ -1,0 +1,23 @@
+<mujoco model="capsule_example">
+    <compiler angle="radian" coordinate="local"/>
+    <option timestep="0.002" gravity="0 0 -9.81"/>
+    
+    <!-- Materials -->
+    <asset>
+        <texture name="ground_tex" type="2d" builtin="checker" width="512" height="512" rgb1="0.8 0.8 0.8" rgb2="0.2 0.2 0.2"/>
+        <material name="ground_mat" texture="ground_tex" />
+        <material name="capsule_mat" rgba="0 0 1 1"/>
+    </asset>
+
+    <!-- Worldbody -->
+    <worldbody>
+        <!-- Ground plane -->
+        <geom name="ground" type="plane" pos="0 0 0" size="5 5 0.1" material="ground_mat"/>
+        
+        <!-- Capsule at origin, aligned with z-axis -->
+        <geom name="capsule" type="capsule" pos="0 0 0" size="0.1 0.5" material="capsule_mat"/>
+    </worldbody>
+    
+    <!-- Actuators (empty for static example) -->
+    <actuator/>
+</mujoco>

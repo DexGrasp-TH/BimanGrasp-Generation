@@ -1,0 +1,9 @@
+paths:
+  right_hand_mjcf: "mjcf/shadow/right_shadow_hand.xml"
+  right_hand_vis_mjcf: "mjcf/shadow/right_shadow_hand_vis.xml"
+  left_hand_mjcf: "mjcf/shadow/left_shadow_hand.xml"
+  left_hand_vis_mjcf: "mjcf/shadow/left_shadow_hand_vis.xml"
+  mesh_path: "mjcf/shadow/meshes"
+  right_contact_points: "mjcf/shadow/right_hand_contact_points.json"
+  left_contact_points: "mjcf/shadow/left_hand_contact_points.json"
+  penetration_points: "mjcf/shadow/penetration_points.json"

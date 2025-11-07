@@ -13,19 +13,20 @@ import pytorch3d.ops
 
 from utils.hand_model import HandModel
 
+
 def initialize_convex_hull(left_hand_model, object_model, args):
     """
     Initialize grasp translation, rotation, joint angles, and contact point indices.
-    
+
     Args:
         left_hand_model: HandModel instance for left hand
         object_model: ObjectModel instance containing target objects
         args: Configuration namespace with initialization parameters
-        
+
     Returns:
         tuple: Normal vectors and sample points from object surface
     """
-        
+
     device = left_hand_model.device
     n_objects = len(object_model.object_mesh_list)
     batch_per_obj = object_model.batch_size_each
@@ -35,7 +36,7 @@ def initialize_convex_hull(left_hand_model, object_model, args):
     translation = torch.zeros([total_batch_size, 3], dtype=torch.float, device=device)
     rotation = torch.zeros([total_batch_size, 3, 3], dtype=torch.float, device=device)
 
-    if left_hand_model.handedness != 'left_hand':
+    if left_hand_model.handedness != "left_hand":
         raise ValueError("This function should initialize the left hand model")
 
     for i in range(n_objects):
@@ -68,53 +69,56 @@ def initialize_convex_hull(left_hand_model, object_model, args):
 
         # Solve transformation matrices
         # hand_rot: rotate the hand to align its grasping direction with the +z axis
-        # cone_rot: jitter the hand's orientation in a cone  
+        # cone_rot: jitter the hand's orientation in a cone
         # world_rot and translation: transform the hand to a position corresponding to point p sampled from the inflated convex hull
         cone_rot = torch.zeros([batch_per_obj, 3, 3], dtype=torch.float, device=device)
         world_rot = torch.zeros([batch_per_obj, 3, 3], dtype=torch.float, device=device)
         for j in range(batch_per_obj):
             cone_rot[j] = torch.tensor(
-                transforms3d.euler.euler2mat(azimuth[j], cone_angle[j], roll[j], axes='rzxz'),
-                dtype=torch.float, device=device
+                transforms3d.euler.euler2mat(azimuth[j], cone_angle[j], roll[j], axes="rzxz"),
+                dtype=torch.float,
+                device=device,
             )
             world_rot[j] = torch.tensor(
                 transforms3d.euler.euler2mat(
-                    math.atan2(n[j, 1], n[j, 0]) - math.pi / 2, -math.acos(n[j, 2]), 0, axes='rzxz'
-                ), dtype=torch.float, device=device
+                    math.atan2(n[j, 1], n[j, 0]) - math.pi / 2, -math.acos(n[j, 2]), 0, axes="rzxz"
+                ),
+                dtype=torch.float,
+                device=device,
             )
         start_idx = i * batch_per_obj
         end_idx = start_idx + batch_per_obj
         z_vec = torch.tensor([0, 0, 1], dtype=torch.float, device=device).reshape(1, -1, 1)
         translation[start_idx:end_idx] = p - distance.unsqueeze(1) * (world_rot @ cone_rot @ z_vec).squeeze(2)
         hand_rot = torch.tensor(
-            transforms3d.euler.euler2mat(0, -np.pi / 3, 0, axes='rzxz'), dtype=torch.float, device=device
+            transforms3d.euler.euler2mat(0, -np.pi / 3, 0, axes="rzxz"), dtype=torch.float, device=device
         )
         rotation[start_idx:end_idx] = world_rot @ cone_rot @ (-hand_rot)
-    
-    # Initialize joint angles using truncated normal distribution  
+
+    # Initialize joint angles using truncated normal distribution
     # joint_angles_mu: hand-crafted canonicalized hand articulation
-    joint_angles_mu = torch.tensor([
-        0.1, 0, -0.6, 0, 0, 0, -0.6, 0, -0.1, 0, -0.6, 0,
-        0, -0.2, 0, -0.6, 0, 0, -1.2, 0, -0.2, 0
-    ], dtype=torch.float, device=device)
+    joint_angles_mu = torch.tensor(
+        [0.1, 0, -0.6, 0, 0, 0, -0.6, 0, -0.1, 0, -0.6, 0, 0, -0.2, 0, -0.6, 0, 0, -1.2, 0, -0.2, 0],
+        dtype=torch.float,
+        device=device,
+    )
     joint_angles_sigma = args.jitter_strength * (left_hand_model.joints_upper - left_hand_model.joints_lower)
     joint_angles = torch.zeros([total_batch_size, left_hand_model.n_dofs], dtype=torch.float, device=device)
     for i in range(left_hand_model.n_dofs):
         torch.nn.init.trunc_normal_(
-            joint_angles[:, i], joint_angles_mu[i], joint_angles_sigma[i],
-            left_hand_model.joints_lower[i] - 1e-6, left_hand_model.joints_upper[i] + 1e-6
+            joint_angles[:, i],
+            joint_angles_mu[i],
+            joint_angles_sigma[i],
+            left_hand_model.joints_lower[i] - 1e-6,
+            left_hand_model.joints_upper[i] + 1e-6,
         )
 
-    hand_pose = torch.cat([
-        translation,
-        rotation.transpose(1, 2)[:, :2].reshape(-1, 6),
-        joint_angles
-    ], dim=1)
+    hand_pose = torch.cat([translation, rotation.transpose(1, 2)[:, :2].reshape(-1, 6), joint_angles], dim=1)
     hand_pose.requires_grad_()
 
     # Initialize contact point indices
     # Handle both old and new parameter names for backward compatibility
-    n_contact = getattr(args, 'num_contacts', getattr(args, 'n_contact', 4))
+    n_contact = getattr(args, "num_contacts", getattr(args, "n_contact", 4))
     contact_indices = torch.randint(
         left_hand_model.n_contact_candidates, size=[total_batch_size, n_contact], device=device
     )
@@ -123,34 +127,24 @@ def initialize_convex_hull(left_hand_model, object_model, args):
     return n, p
 
 
-def initialize_dual_hand(right_hand_model, object_model, args):
+def initialize_dual_hand(right_hand_model, left_hand_model, object_model, args):
     """
     Initialize both hands' positions and rotations to grasp an object symmetrically.
-    
+
     Args:
         right_hand_model: HandModel instance for right hand
         object_model: ObjectModel instance containing target objects
         args: Configuration namespace with initialization parameters
-        
+
     Returns:
         tuple: (left_hand_model, right_hand_model) with initialized poses
     """
-    
+
     device = right_hand_model.device
     n_objects = len(object_model.object_mesh_list)
     batch_per_obj = object_model.batch_size_each
-    total_batch_size = n_objects * batch_per_obj    
-    
-    # Create left hand model
-    left_hand_model = HandModel(
-        mjcf_path='mjcf/left_shadow_hand.xml',
-        mesh_path='mjcf/meshes',
-        contact_points_path='mjcf/left_hand_contact_points.json',
-        penetration_points_path='mjcf/penetration_points.json',
-        device=device,
-        handedness='left_hand'
-    )
-    
+    total_batch_size = n_objects * batch_per_obj
+
     n, p = initialize_convex_hull(left_hand_model, object_model, args)
 
     # Compute the right hand's parameters based on the left hand's
@@ -168,7 +162,7 @@ def initialize_dual_hand(right_hand_model, object_model, args):
         p[start_idx:end_idx, 0] = -p[start_idx:end_idx, 0]
         p[start_idx:end_idx, 1] = -p[start_idx:end_idx, 1]
         p[start_idx:end_idx, 2] = p[start_idx:end_idx, 2]
-        
+
         # Sample parameters for right hand
         rand_vals = torch.rand([4, batch_per_obj], dtype=torch.float, device=device)
         distance = args.distance_lower + (args.distance_upper - args.distance_lower) * rand_vals[0]
@@ -184,45 +178,49 @@ def initialize_dual_hand(right_hand_model, object_model, args):
         world_rot = torch.zeros([batch_per_obj, 3, 3], dtype=torch.float, device=device)
         for j in range(batch_per_obj):
             cone_rot[j] = torch.tensor(
-                transforms3d.euler.euler2mat(azimuth[j], cone_angle[j], roll[j], axes='rzxz'),
-                dtype=torch.float, device=device
+                transforms3d.euler.euler2mat(azimuth[j], cone_angle[j], roll[j], axes="rzxz"),
+                dtype=torch.float,
+                device=device,
             )
             world_rot[j] = torch.tensor(
                 transforms3d.euler.euler2mat(
-                    math.atan2(n[j, 1], n[j, 0]) - math.pi / 2, -math.acos(n[j, 2]), 0, axes='rzxz'
-                ), dtype=torch.float, device=device
+                    math.atan2(n[j, 1], n[j, 0]) - math.pi / 2, -math.acos(n[j, 2]), 0, axes="rzxz"
+                ),
+                dtype=torch.float,
+                device=device,
             )
         z_vec = torch.tensor([0, 0, 1], dtype=torch.float, device=device).reshape(1, -1, 1)
         translation_right[start_idx:end_idx] = p - distance.unsqueeze(1) * (world_rot @ cone_rot @ z_vec).squeeze(2)
         hand_rot = torch.tensor(
-            transforms3d.euler.euler2mat(0, -np.pi / 3, 0, axes='rzxz'), dtype=torch.float, device=device
+            transforms3d.euler.euler2mat(0, -np.pi / 3, 0, axes="rzxz"), dtype=torch.float, device=device
         )
         rotation_right[start_idx:end_idx] = world_rot @ cone_rot @ hand_rot
 
-
     # Initialize right hand joint angles
-    joint_angles_mu = torch.tensor([
-        0.1, 0, 0.6, 0, 0, 0, 0.6, 0, -0.1, 0, 0.6, 0,
-        0, -0.2, 0, 0.6, 0, 0, 1.2, 0, -0.2, 0
-    ], dtype=torch.float, device=device)
+    joint_angles_mu = torch.tensor(
+        [0.1, 0, 0.6, 0, 0, 0, 0.6, 0, -0.1, 0, 0.6, 0, 0, -0.2, 0, 0.6, 0, 0, 1.2, 0, -0.2, 0],
+        dtype=torch.float,
+        device=device,
+    )
     joint_angles_sigma = args.jitter_strength * (right_hand_model.joints_upper - right_hand_model.joints_lower)
     joint_angles = torch.zeros([total_batch_size, right_hand_model.n_dofs], dtype=torch.float, device=device)
     for i in range(right_hand_model.n_dofs):
         torch.nn.init.trunc_normal_(
-            joint_angles[:, i], joint_angles_mu[i], joint_angles_sigma[i],
-            right_hand_model.joints_lower[i] - 1e-6, right_hand_model.joints_upper[i] + 1e-6
+            joint_angles[:, i],
+            joint_angles_mu[i],
+            joint_angles_sigma[i],
+            right_hand_model.joints_lower[i] - 1e-6,
+            right_hand_model.joints_upper[i] + 1e-6,
         )
 
     # Assemble right hand pose
-    hand_pose_right = torch.cat([
-        translation_right,
-        rotation_right.transpose(1, 2)[:, :2].reshape(-1, 6),
-        joint_angles
-    ], dim=1)
+    hand_pose_right = torch.cat(
+        [translation_right, rotation_right.transpose(1, 2)[:, :2].reshape(-1, 6), joint_angles], dim=1
+    )
     hand_pose_right.requires_grad_()
 
     # Set parameters for right hand model
-    n_contact = getattr(args, 'num_contacts', getattr(args, 'n_contact', 4))
+    n_contact = getattr(args, "num_contacts", getattr(args, "n_contact", 4))
     contact_indices = torch.randint(
         right_hand_model.n_contact_candidates, size=[total_batch_size, n_contact], device=device
     )

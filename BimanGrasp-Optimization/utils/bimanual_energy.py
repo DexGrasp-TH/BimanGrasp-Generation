@@ -267,7 +267,7 @@ class BimanualEnergyComputer:
         self.config = config or EnergyConfig()
         
         # Initialize component computers
-        self.force_closure_computer = ForceClosureComputer(device)
+        self.force_closure_computer = ForceClosureComputer(device) # Mingrui: not used ?
         self.penetration_computer = PenetrationComputer(device)
         self.contact_distance_computer = ContactDistanceComputer(device)
         self.wrench_volume_computer = WrenchVolumeComputer(device)

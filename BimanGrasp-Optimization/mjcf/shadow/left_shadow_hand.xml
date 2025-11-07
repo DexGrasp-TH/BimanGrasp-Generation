@@ -1,5 +1,5 @@
 <mujoco model="MuJoCo Model">
-    <compiler angle="radian" meshdir="./mjcf/meshes/" texturedir="./mjcf/textures/" />
+    <compiler angle="radian" meshdir="./mjcf/shadow/meshes/" texturedir="./mjcf/shadow/textures/" />
     <option apirate="200" iterations="20" />
     <size njmax="500" nconmax="100" nstack="600000" nuser_jnt="1" nuser_site="1" nuser_tendon="1" nuser_actuator="16" nuser_sensor="1" />
     <visual>
@@ -142,7 +142,6 @@
                         <body name="robot0:thbase" pos="0.034 0.009 0.029" quat="0.923956 0 0.382499 0">
                             <inertial pos="0 0 0" mass="0.01" diaginertia="1e-05 1e-05 1e-05" />
                             <joint name="robot0:THJ4" pos="0 0 0" axis="0 0 -1" range="-1.047 1.047" user="1121" />
-                            <geom name="robot0:V_thbase" size="0.001 0.001 0.001" type="box" group="1" />
                             <body name="robot0:thproximal" pos="0 0 0">
                                 <inertial pos="0 0 0.017" quat="0.981604 0 0.000999597 0.190923" mass="0.016" diaginertia="1e-05 1e-05 1e-05" />
                                 <joint name="robot0:THJ3" pos="0 0 0" axis="1 0 0" range="0 1.222" user="1120" />
@@ -150,14 +149,13 @@
                                 <body name="robot0:thhub" pos="0 0 0.038">
                                     <inertial pos="0 0 0" mass="0.002" diaginertia="1e-05 1e-05 1e-05" />
                                     <joint name="robot0:THJ2" pos="0 0 0" axis="1 0 0" range="-0.209 0.209" user="1119" />
-                                    <geom name="robot0:V_thhub" size="0.001 0.001 0.001" type="box" group="1" />
                                     <body name="robot0:thmiddle" pos="0 0 0">
                                         <inertial pos="0 0 0.016" quat="0.999971 -0.000999971 -0.00699979 0.00299991" mass="0.016" diaginertia="1e-05 1e-05 1e-05" />
                                         <joint name="robot0:THJ1" pos="0 0 0" axis="0 1 0" range="-0.524 0.524" user="1118" />
                                         <geom name="robot0:C_thmiddle" class="robot0:DC_Hand" size="0.011 0.016" pos="0 0 0.016" type="capsule" />
                                         <body name="robot0:thdistal" pos="0 0 0.032">
                                             <inertial pos="0 0 0.016" quat="0.99887 -0.00499935 -0.0469939 0.00499935" mass="0.016" diaginertia="1e-05 1e-05 1e-05" />
-                                            <joint name="robot0:THJ0" pos="0 0 0" axis="0 1 0" range="-1.571 0" user="1117" />
+                                            <joint name="robot0:THJ0" pos="0 0 0" axis="0 1 0" range="0 1.571" user="1117" />
                                             <geom name="robot0:C_thdistal" class="robot0:DC_Hand" size="0.00918 0.013" pos="0 0 0.013" type="capsule" condim="4" />
                                             <site name="robot0:S_thtip" pos="0 0 0.0275" group="3" />
                                             <site name="robot0:Tch_thtip" class="robot0:D_Touch" pos="-0.005 0 0.02" size="0.005 0.011 0.016" />
@@ -208,8 +206,6 @@
         </fixed>
     </tendon>
     <actuator>
-        <general name="robot0:A_WRJ1" class="robot0:asset_class" joint="robot0:WRJ1" ctrlrange="-0.489 0.14" forcerange="-4.785 4.785" biastype="affine" gainprm="5 0 0 0 0 0 0 0 0 0" biasprm="0 -5 0 0 0 0 0 0 0 0" user="2038 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
-        <general name="robot0:A_WRJ0" class="robot0:asset_class" joint="robot0:WRJ0" ctrlrange="-0.698 0.489" forcerange="-2.175 2.175" biastype="affine" gainprm="5 0 0 0 0 0 0 0 0 0" biasprm="0 -5 0 0 0 0 0 0 0 0" user="2036 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
         <general name="robot0:A_FFJ3" class="robot0:asset_class" joint="robot0:FFJ3" ctrlrange="-0.349 0.349" forcerange="-0.9 0.9" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2004 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
         <general name="robot0:A_FFJ2" class="robot0:asset_class" joint="robot0:FFJ2" ctrlrange="0 1.571" forcerange="-0.9 0.9" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2002 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
         <general name="robot0:A_FFJ1" class="robot0:asset_class" joint="robot0:FFJ1" ctrlrange="0 1.571" forcerange="-0.7245 0.7245" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
@@ -227,11 +223,9 @@
         <general name="robot0:A_THJ3" class="robot0:asset_class" joint="robot0:THJ3" ctrlrange="0 1.222" forcerange="-1.45 1.45" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2032 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
         <general name="robot0:A_THJ2" class="robot0:asset_class" joint="robot0:THJ2" ctrlrange="-0.209 0.209" forcerange="-0.99 0.99" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2030 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
         <general name="robot0:A_THJ1" class="robot0:asset_class" joint="robot0:THJ1" ctrlrange="-0.524 0.524" forcerange="-0.99 0.99" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2028 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
-        <general name="robot0:A_THJ0" class="robot0:asset_class" joint="robot0:THJ0" ctrlrange="-1.571 0" forcerange="-0.81 0.81" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2026 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
+        <general name="robot0:A_THJ0" class="robot0:asset_class" joint="robot0:THJ0" ctrlrange="0 1.571" forcerange="-0.81 0.81" biastype="affine" biasprm="0 -1 0 0 0 0 0 0 0 0" user="2026 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" />
     </actuator>
     <sensor>
-        <jointpos joint="robot0:WRJ1" name="robot0:Sjp_WRJ1" />
-        <jointpos joint="robot0:WRJ0" name="robot0:Sjp_WRJ0" />
         <jointpos joint="robot0:FFJ3" name="robot0:Sjp_FFJ3" />
         <jointpos joint="robot0:FFJ2" name="robot0:Sjp_FFJ2" />
         <jointpos joint="robot0:FFJ1" name="robot0:Sjp_FFJ1" />
