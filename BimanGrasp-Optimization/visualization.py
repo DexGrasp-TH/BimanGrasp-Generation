@@ -14,34 +14,10 @@ import hydra
 
 from utils.hand_model import HandModel
 from utils.object_model import ObjectModel
-from utils.config import ExperimentConfig, create_config_from_args
+from utils.config import ExperimentConfig
 
 translation_names = ["WRJTx", "WRJTy", "WRJTz"]
 rot_names = ["WRJRx", "WRJRy", "WRJRz"]
-joint_names = [
-    "robot0:FFJ3",
-    "robot0:FFJ2",
-    "robot0:FFJ1",
-    "robot0:FFJ0",
-    "robot0:MFJ3",
-    "robot0:MFJ2",
-    "robot0:MFJ1",
-    "robot0:MFJ0",
-    "robot0:RFJ3",
-    "robot0:RFJ2",
-    "robot0:RFJ1",
-    "robot0:RFJ0",
-    "robot0:LFJ4",
-    "robot0:LFJ3",
-    "robot0:LFJ2",
-    "robot0:LFJ1",
-    "robot0:LFJ0",
-    "robot0:THJ4",
-    "robot0:THJ3",
-    "robot0:THJ2",
-    "robot0:THJ1",
-    "robot0:THJ0",
-]
 
 
 def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
@@ -78,12 +54,7 @@ def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
 
 @hydra.main(config_path="cfg", config_name="base", version_base=None)  # must use version_base=None for compatibility
 def main(cfg: DictConfig):
-    """Hydra entrypoint. Builds ExperimentConfig from config.yaml and runs the experiment.
-
-    The optional `args` parameter is accepted for compatibility but not required or used by
-    the function. This allows callers to pass a second positional argument without breaking
-    the Hydra-decorated entrypoint.
-    """
+    """Hydra entrypoint. Builds ExperimentConfig from config.yaml and runs the experiment."""
 
     # merge cfg.hand.paths into cfg.paths
     cfg.paths = OmegaConf.merge(cfg.paths, cfg.hand.paths)
@@ -91,26 +62,16 @@ def main(cfg: DictConfig):
     # Convert to ExperimentConfig dataclass
     config = experiment_config_from_dict(cfg)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--object_code", type=str, default="core_bottle_1a7ba1f4c892e2da30711cdbdbc73924")
-    parser.add_argument("--num", type=int, default=2)
-    parser.add_argument("--no_st", type=bool, default=True)
-    parser.add_argument("--test", type=bool, default=False)
-    parser.add_argument("--result_path", type=str, default="../data/experiments/debug/results")
-
-    args = parser.parse_args()
-
     # hyper-parameters
-    object_code = args.object_code
-    grasp_idx = args.num
-    result_path = args.result_path
+    object_code = "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
+    grasp_idx_lst = [0, 1, 2, 3]
+    result_path = "../data/experiments/debug2/results"
     device = "cpu"
     load_intermediate_results = True
     step = 10000
 
     right_hand_model = HandModel(
-        mjcf_path=config.paths.right_hand_vis_mjcf,
-        mesh_path=config.paths.mesh_path,
+        mjcf_path=config.paths.right_hand_mjcf,
         contact_points_path=config.paths.right_contact_points,
         penetration_points_path=config.paths.penetration_points,
         device=device,
@@ -118,8 +79,7 @@ def main(cfg: DictConfig):
         handedness="right_hand",
     )
     left_hand_model = HandModel(
-        mjcf_path=config.paths.left_hand_vis_mjcf,
-        mesh_path=config.paths.mesh_path,
+        mjcf_path=config.paths.left_hand_mjcf,
         contact_points_path=config.paths.left_contact_points,
         penetration_points_path=config.paths.penetration_points,
         device=device,
@@ -135,82 +95,104 @@ def main(cfg: DictConfig):
         size="large",
         bodex_format=True,
     )
-    # load results
 
-    if load_intermediate_results:
-        data_dict = np.load(os.path.join(result_path, object_code + f"_{step}.npy"), allow_pickle=True)[grasp_idx]
-    else:
-        data_dict = np.load(os.path.join(result_path, object_code + ".npy"), allow_pickle=True)[grasp_idx]
+    for idx in grasp_idx_lst:
+        # load results
+        if load_intermediate_results:
+            data_dict = np.load(os.path.join(result_path, object_code + f"_{step}.npy"), allow_pickle=True)[idx]
+        else:
+            data_dict = np.load(os.path.join(result_path, object_code + ".npy"), allow_pickle=True)[idx]
 
-    right_qpos = data_dict["qpos_right"]
-    right_rot = np.array(transforms3d.euler.euler2mat(*[right_qpos[name] for name in rot_names]))
-    right_rot = right_rot[:, :2].T.ravel().tolist()
-    right_hand_pose = torch.tensor(
-        [right_qpos[name] for name in translation_names] + right_rot + [right_qpos[name] for name in joint_names],
-        dtype=torch.float,
-        device=device,
-    )
-    if "qpos_right_st" in data_dict:
-        right_qpos_st = data_dict["qpos_right_st"]
-        right_rot = np.array(transforms3d.euler.euler2mat(*[right_qpos_st[name] for name in rot_names]))
-        right_rot = right_rot[:, :2].T.ravel().tolist()
-        right_hand_pose_st = torch.tensor(
-            [right_qpos_st[name] for name in translation_names]
-            + right_rot
-            + [right_qpos_st[name] for name in joint_names],
-            dtype=torch.float,
-            device=device,
+        # --- Utility to build hand pose tensor ---
+        def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
+            """Build a torch tensor for hand pose given qpos dict."""
+            rot = np.array(transforms3d.euler.euler2mat(*[qpos[name] for name in rot_names]))
+            rot = rot[:, :2].T.ravel().tolist()  # flatten first two rotation columns
+            hand_pose = torch.tensor(
+                [qpos[name] for name in translation_names] + rot + [qpos[name] for name in joint_names],
+                dtype=torch.float,
+                device=device,
+            )
+            return hand_pose
+
+        # --- Load qpos and construct hand poses ---
+
+        # Right hand
+        right_qpos = data_dict["qpos_right"]
+        right_hand_pose = build_hand_pose(
+            right_qpos, translation_names, rot_names, right_hand_model.get_joint_names(), device
         )
 
-    # load left results
-    left_qpos = data_dict["qpos_left"]
-    left_rot = np.array(transforms3d.euler.euler2mat(*[left_qpos[name] for name in rot_names]))
-    left_rot = left_rot[:, :2].T.ravel().tolist()
-    left_hand_pose = torch.tensor(
-        [left_qpos[name] for name in translation_names] + left_rot + [left_qpos[name] for name in joint_names],
-        dtype=torch.float,
-        device=device,
-    )
-    if "qpos_left_st" in data_dict:
-        left_qpos_st = data_dict["qpos_left_st"]
-        left_rot = np.array(transforms3d.euler.euler2mat(*[left_qpos_st[name] for name in rot_names]))
-        left_rot = left_rot[:, :2].T.ravel().tolist()
-        left_hand_pose_st = torch.tensor(
-            [left_qpos_st[name] for name in translation_names]
-            + left_rot
-            + [left_qpos_st[name] for name in joint_names],
-            dtype=torch.float,
-            device=device,
+        right_hand_pose_st = None
+        if "qpos_right_st" in data_dict:
+            right_qpos_st = data_dict["qpos_right_st"]
+            right_hand_pose_st = build_hand_pose(
+                right_qpos_st, translation_names, rot_names, right_hand_model.get_joint_names(), device
+            )
+
+        # Left hand
+        left_qpos = data_dict["qpos_left"]
+        left_hand_pose = build_hand_pose(
+            left_qpos, translation_names, rot_names, left_hand_model.get_joint_names(), device
         )
 
-    object_model.initialize(args.object_code)
-    object_model.object_scale_tensor = torch.tensor(data_dict["scale"], dtype=torch.float, device=device).reshape(1, 1)
+        print(f"left_qpos: {left_qpos}")
+        print(f"right_qpos: {right_qpos}")
 
-    right_hand_model.set_parameters(right_hand_pose.unsqueeze(0))
-    right_hand_en_plotly = right_hand_model.get_plotly_data(
-        i=0, opacity=1, color="lightslategray", with_contact_points=False
-    )
+        left_hand_pose_st = None
+        if "qpos_left_st" in data_dict:
+            left_qpos_st = data_dict["qpos_left_st"]
+            left_hand_pose_st = build_hand_pose(
+                left_qpos_st, translation_names, rot_names, left_hand_model.get_joint_names(), device
+            )
 
-    left_hand_model.set_parameters(left_hand_pose.unsqueeze(0))
-    left_hand_en_plotly = left_hand_model.get_plotly_data(
-        i=0, opacity=1, color="lightslategray", with_contact_points=False
-    )
-    object_plotly = object_model.get_plotly_data(i=0, color="seashell", opacity=1)
-
-    fig = go.Figure(right_hand_en_plotly + object_plotly + left_hand_en_plotly)
-
-    fig.update_layout(paper_bgcolor="#E2F0D9", plot_bgcolor="#E2F0D9")
-
-    fig.update_layout(scene_aspectmode="data")
-    fig.update_layout(
-        scene=dict(
-            xaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
-            yaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
-            zaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+        # --- Initialize models ---
+        object_model.initialize(object_code)
+        object_model.object_scale_tensor = torch.tensor(data_dict["scale"], dtype=torch.float, device=device).reshape(
+            1, 1
         )
-    )
 
-    fig.show()
+        # --- Visualization ---
+        # Final poses (solid colors)
+        right_hand_model.set_parameters(right_hand_pose.unsqueeze(0))
+        right_plot = right_hand_model.get_plotly_data(
+            i=0, opacity=1.0, color="lightslategray", with_contact_points=False
+        )
+
+        left_hand_model.set_parameters(left_hand_pose.unsqueeze(0))
+        left_plot = left_hand_model.get_plotly_data(i=0, opacity=1.0, color="lightslategray", with_contact_points=False)
+
+        object_plot = object_model.get_plotly_data(i=0, color="seashell", opacity=1.0)
+
+        # Starting poses (semi-transparent, distinct color)
+        start_plots = []
+        if right_hand_pose_st is not None:
+            right_hand_model.set_parameters(right_hand_pose_st.unsqueeze(0))
+            start_plots += right_hand_model.get_plotly_data(
+                i=0, opacity=0.3, color="deepskyblue", with_contact_points=False
+            )
+
+        if left_hand_pose_st is not None:
+            left_hand_model.set_parameters(left_hand_pose_st.unsqueeze(0))
+            start_plots += left_hand_model.get_plotly_data(
+                i=0, opacity=0.3, color="palevioletred", with_contact_points=False
+            )
+
+        # Combine everything
+        fig = go.Figure(right_plot + left_plot + object_plot + start_plots)
+
+        fig.update_layout(
+            paper_bgcolor="#E2F0D9",
+            plot_bgcolor="#E2F0D9",
+            scene_aspectmode="data",
+            scene=dict(
+                xaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+                yaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+                zaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+            ),
+        )
+
+        fig.show()
 
 
 if __name__ == "__main__":

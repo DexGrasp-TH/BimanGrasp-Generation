@@ -5,11 +5,14 @@ gpu: "0"
 
 defaults:
   - _self_
-  - hand: shadow
+  - hand: shadow2
 
 object_code_list:
   - "sem_Wii_effdc659515ff747eb2c6725049f8f"
   - "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
+
+hand_params:
+  name:
 
 paths:
   right_hand_mjcf: 
@@ -43,6 +46,7 @@ optimizer:
   stepsize_period: 50
   momentum: 0.98
   num_iterations: 10000
+  joint_limit_clamp: False
 
 initialization:
   distance_lower: 0.2
@@ -51,11 +55,13 @@ initialization:
   theta_upper: 0.5235987755982988    # pi/6
   jitter_strength: 0.1
   num_contacts: 4
+  left_hand_joint_mu:
+  right_hand_joint_mu:
 
 model:
   n_surface_points: 2000
   num_samples: 2000
   size: "large"
-  batch_size: 128
+  batch_size: 4 # 128
   batch_size_each: 5
   max_total_batch_size: 100

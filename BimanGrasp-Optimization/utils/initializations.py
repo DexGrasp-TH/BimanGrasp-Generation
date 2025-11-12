@@ -93,12 +93,12 @@ def initialize_convex_hull(left_hand_model, object_model, args):
         hand_rot = torch.tensor(
             transforms3d.euler.euler2mat(0, -np.pi / 3, 0, axes="rzxz"), dtype=torch.float, device=device
         )
-        rotation[start_idx:end_idx] = world_rot @ cone_rot @ (-hand_rot)
+        rotation[start_idx:end_idx] = world_rot @ cone_rot @ (hand_rot)
 
-    # Initialize joint angles using truncated normal distribution
+    # Initialize LEFT joint angles using truncated normal distribution
     # joint_angles_mu: hand-crafted canonicalized hand articulation
     joint_angles_mu = torch.tensor(
-        [0.1, 0, -0.6, 0, 0, 0, -0.6, 0, -0.1, 0, -0.6, 0, 0, -0.2, 0, -0.6, 0, 0, -1.2, 0, -0.2, 0],
+        args.left_hand_joint_mu,
         dtype=torch.float,
         device=device,
     )
@@ -198,7 +198,7 @@ def initialize_dual_hand(right_hand_model, left_hand_model, object_model, args):
 
     # Initialize right hand joint angles
     joint_angles_mu = torch.tensor(
-        [0.1, 0, 0.6, 0, 0, 0, 0.6, 0, -0.1, 0, 0.6, 0, 0, -0.2, 0, 0.6, 0, 0, 1.2, 0, -0.2, 0],
+        args.right_hand_joint_mu,
         dtype=torch.float,
         device=device,
     )

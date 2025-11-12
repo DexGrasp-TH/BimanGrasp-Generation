@@ -122,146 +122,6 @@ class GraspExperiment:
             self.bimanual_pair.left, self.bimanual_pair.right, config=self.config.optimizer, device=self.device
         )
 
-    def setup_logging(self):
-        """Setup experiment logging and result directories."""
-
-        # Create directories
-        logs_path = self.config.paths.get_experiment_logs_path(self.config.name)
-        results_path = self.config.paths.get_experiment_results_path(self.config.name)
-
-        ensure_directory(logs_path, clean=True)
-        ensure_directory(results_path, clean=True)
-
-        # Create logger
-        self.logger = Logger(
-            log_dir=logs_path,
-            thres_fc=self.config.energy.thres_fc,
-            thres_dis=self.config.energy.thres_dis,
-            thres_pen=self.config.energy.thres_pen,
-        )
-
-        # Save experiment configuration
-        config_path = os.path.join(results_path, "config.txt")
-        with open(config_path, "w") as f:
-            f.write(str(self.config))
-
-    def run_optimization(self):
-        """Run the optimization loop."""
-        print("Starting optimization...")
-
-        self.profiler.enable()
-
-        # Initial energy computation
-        energy_terms = self.energy_computer.compute_all_energies(self.bimanual_pair, self.object_model, verbose=True)
-
-        energy_terms.total.sum().backward(retain_graph=True)
-        self.logger.log(
-            energy_terms.total,
-            energy_terms.force_closure,
-            energy_terms.distance,
-            energy_terms.penetration,
-            energy_terms.self_penetration,
-            energy_terms.joint_limits,
-            0,
-            show=False,
-        )
-
-        results_path = self.config.paths.get_experiment_results_path(self.config.name)
-
-        # Main optimization loop
-        for step in tqdm(range(1, self.config.optimizer.num_iterations + 1), desc="optimizing"):
-            # MALA proposal step with Langevin dynamics
-            step_size = self.optimizer.langevin_proposal()
-
-            # Zero gradients and compute new energy
-            self.optimizer.zero_grad()
-            new_energy_terms = self.energy_computer.compute_all_energies(
-                self.bimanual_pair, self.object_model, verbose=True
-            )
-
-            new_energy_terms.total.sum().backward(retain_graph=True)
-
-            # Metropolis-Hastings acceptance step
-            with torch.no_grad():
-                accept, temperature = self.optimizer.metropolis_hastings_step(
-                    energy_terms.total, new_energy_terms.total
-                )
-
-                # Update energies for accepted samples
-                energy_terms.total[accept] = new_energy_terms.total[accept]
-                energy_terms.distance[accept] = new_energy_terms.distance[accept]
-                energy_terms.force_closure[accept] = new_energy_terms.force_closure[accept]
-                energy_terms.penetration[accept] = new_energy_terms.penetration[accept]
-                energy_terms.self_penetration[accept] = new_energy_terms.self_penetration[accept]
-                energy_terms.joint_limits[accept] = new_energy_terms.joint_limits[accept]
-                energy_terms.wrench_volume[accept] = new_energy_terms.wrench_volume[accept]
-
-                # Log progress
-                self.logger.log(
-                    energy_terms.total,
-                    energy_terms.force_closure,
-                    energy_terms.distance,
-                    energy_terms.penetration,
-                    energy_terms.self_penetration,
-                    energy_terms.joint_limits,
-                    step,
-                    show=False,
-                )
-
-                if (step + 1) % 500 == 0:
-                    self.save_intermediate_results(step=step + 1, energy_terms=energy_terms)
-
-        self.profiler.disable()
-        return energy_terms
-
-    def save_intermediate_results(self, step: int, energy_terms: EnergyTerms):
-        """Save intermediate results during optimization."""
-        results_path = self.config.paths.get_experiment_results_path(self.config.name)
-
-        save_grasp_results(
-            results_path,
-            self.config.object_code_list,
-            self.config.model.batch_size,
-            self.object_model,
-            self.bimanual_pair,
-            self.left_hand_pose_st,
-            self.right_hand_pose_st,
-            energy_terms,
-            step=step,
-        )
-
-    def save_final_results(self, energy_terms: EnergyTerms):
-        """Save final optimization results."""
-        print("Saving final results...")
-
-        results_path = self.config.paths.get_experiment_results_path(self.config.name)
-
-        save_grasp_results(
-            results_path,
-            self.config.object_code_list,
-            self.config.model.batch_size,
-            self.object_model,
-            self.bimanual_pair,
-            self.left_hand_pose_st,
-            self.right_hand_pose_st,
-            energy_terms,
-            step=None,
-        )
-
-    def print_performance_stats(self):
-        """Print performance and profiling statistics."""
-        print("\n=== Performance Statistics ===")
-        # self.profiler.print_stats()
-
-        if HAS_MEMORY_PROFILER:
-            try:
-                memory_usage = memory_profiler.memory_usage(-1, interval=1)
-                print(f"Peak memory usage: {max(memory_usage):.2f} MB")
-            except (RuntimeError, OSError) as e:
-                print(f"Memory profiling error: {e}")
-        else:
-            print("Memory profiling unavailable (memory_profiler not installed)")
-
     def run_full_experiment(self) -> EnergyTerms:
         """Run the complete experiment pipeline."""
         print(f"Starting experiment: {self.config.name}")
@@ -270,19 +130,52 @@ class GraspExperiment:
         self.setup_environment()
         self.setup_models()
         self.setup_optimization()
-        self.setup_logging()
 
-        # Run optimization
-        final_energy_terms = self.run_optimization()
+        left_hand_model = self.bimanual_pair.left
+        right_hand_model = self.bimanual_pair.right
+        object_model = self.object_model
+        device = self.device
 
-        # Save results
-        self.save_final_results(final_energy_terms)
+        # load results
+        result_path = "../data/experiments/debug/results"
+        object_code = "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
+        step = 10000
+        idx = 3
+        data_dict = np.load(os.path.join(result_path, object_code + f"_{step}.npy"), allow_pickle=True)[idx]
 
-        # Print statistics
-        self.print_performance_stats()
+        # --- Utility to build hand pose tensor ---
+        def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
+            """Build a torch tensor for hand pose given qpos dict."""
+            rot = np.array(transforms3d.euler.euler2mat(*[qpos[name] for name in rot_names]))
+            rot = rot[:, :2].T.ravel().tolist()  # flatten first two rotation columns
+            hand_pose = torch.tensor(
+                [qpos[name] for name in translation_names] + rot + [qpos[name] for name in joint_names],
+                dtype=torch.float,
+                device=device,
+            )
+            return hand_pose
 
-        print(f"Experiment completed: {self.config.name}")
-        return final_energy_terms
+        # --- Load qpos and construct hand poses ---
+        translation_names = ["WRJTx", "WRJTy", "WRJTz"]
+        rot_names = ["WRJRx", "WRJRy", "WRJRz"]
+
+        # Right hand
+        right_qpos = data_dict["qpos_right"]
+        right_hand_pose = build_hand_pose(
+            right_qpos, translation_names, rot_names, right_hand_model.get_joint_names(), device
+        )
+        # Left hand
+        left_qpos = data_dict["qpos_left"]
+        left_hand_pose = build_hand_pose(
+            left_qpos, translation_names, rot_names, left_hand_model.get_joint_names(), device
+        )
+
+        right_hand_model.set_parameters(right_hand_pose.unsqueeze(0))
+        left_hand_model.set_parameters(left_hand_pose.unsqueeze(0))
+
+        self.bimanual_pair.compute_joint_limits_energy()
+
+        a = 1
 
 
 def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
@@ -318,7 +211,7 @@ def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
     return exp
 
 
-@hydra.main(config_path="cfg", config_name="base", version_base=None)  # must use version_base=None for compatibility
+@hydra.main(config_path="../cfg", config_name="base", version_base=None)  # must use version_base=None for compatibility
 def main(cfg: DictConfig):
     """Hydra entrypoint. Builds ExperimentConfig from config.yaml and runs the experiment.
 
@@ -342,17 +235,14 @@ def main(cfg: DictConfig):
     print(f"Batch size: {config.model.batch_size} per object")
     print(f"Total batch: {config.total_batch_size}")
     print(f"iterations: {config.optimizer.num_iterations}")
-    print(
-        f"Energy weights: dis={config.energy.w_dis}, pen={config.energy.w_pen}, vew={config.energy.w_vew}",
-        f", joint={config.energy.w_joints}, spen={config.energy.w_spen}",
-    )
+    print(f"Energy weights: dis={config.energy.w_dis}, pen={config.energy.w_pen}, vew={config.energy.w_vew}")
     print(f"temperature: {config.optimizer.initial_temperature}")
     print(f"Langevin noise: {config.optimizer.langevin_noise_factor}")
     print("=" * 45)
 
     # Run experiment
     experiment = GraspExperiment(config)
-    final_energy_terms = experiment.run_full_experiment()
+    experiment.run_full_experiment()
 
 
 if __name__ == "__main__":

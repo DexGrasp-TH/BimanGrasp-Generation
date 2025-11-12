@@ -13,6 +13,7 @@ import pytorch3d.structures
 import pytorch3d.ops
 import plotly.graph_objects as go
 import logging
+import random
 
 # 添加上级目录到 sys.path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -20,11 +21,36 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from utils.hand_model import HandModel
 
 
+def set_seed(seed: int = 42):
+    # Python 内置随机模块
+    random.seed(seed)
+
+    # Numpy 随机
+    np.random.seed(seed)
+
+    # PyTorch CPU/GPU 随机
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # 多 GPU
+
+    # 确保 cudnn 的确定性行为
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    # 控制环境变量（部分库依赖）
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+    print(f"Random seed set to: {seed}")
+
+
+set_seed(42)
+
+
 def test():
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow/right_shadow_hand.xml"
-    contact_points_path = "mjcf/shadow/right_hand_contact_points.json"
-    penetration_points_path = "mjcf/shadow/penetration_points.json"
+    mjcf_path = "mjcf/shadow2/left_hand.xml"
+    contact_points_path = "mjcf/shadow2/left_hand_contact_points.json"
+    penetration_points_path = None
     device = "cuda:0"
 
     hand_model = HandModel(
@@ -33,7 +59,7 @@ def test():
         penetration_points_path=penetration_points_path,
         n_surface_points=2000,
         device=device,
-        handedness="right_hand",
+        handedness="left_hand",
     )
 
     hand_pos = torch.zeros((3,), device=device)
@@ -45,7 +71,7 @@ def test():
     hand_model.set_parameters(hand_pose, contact_point_indices)
 
     ########### Visualize via plotly ###########
-    hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=1, color="lightslategray", with_contact_points=True)
+    hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=0.6, color="lightslategray", with_contact_points=True)
 
     fig = go.Figure(hand_en_plotly)
     fig.update_layout(paper_bgcolor="#E2F0D9", plot_bgcolor="#E2F0D9")
@@ -62,9 +88,9 @@ def test():
 
 def test_cal_distance():
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow/right_shadow_hand.xml"
-    contact_points_path = "mjcf/shadow/right_hand_contact_points.json"
-    penetration_points_path = "mjcf/shadow/penetration_points.json"
+    mjcf_path = "mjcf/shadow2/right_hand.xml"
+    contact_points_path = "mjcf/shadow2/right_hand_contact_points.json"
+    penetration_points_path = None
     device = "cuda:0"
 
     hand_model = HandModel(
@@ -84,13 +110,13 @@ def test_cal_distance():
 
     hand_model.set_parameters(hand_pose, contact_point_indices)
 
-    xp = torch.tensor([0.0, 0.0, 0.1]).float().to(device).reshape(1, -1, 3)
+    xp = torch.tensor([0.0, 0.0, 0.15]).float().to(device).reshape(1, -1, 3)
     xp = xp.repeat(3, 2, 1)  # (B, N, 3)
     dis = hand_model.cal_distance(xp)
     print(f"dis: {dis}.")
 
     ########### Visualize via plotly ###########
-    hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=1, color="lightslategray", with_contact_points=True)
+    hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=0.6, color="lightslategray", with_contact_points=True)
 
     # Visualize the query point
     xp = xp.detach().cpu().numpy()
@@ -113,9 +139,9 @@ def test_cal_distance():
 
 def test_self_penetration():
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow/left_shadow_hand.xml"
-    contact_points_path = "mjcf/shadow/left_hand_contact_points.json"
-    penetration_points_path = "mjcf/shadow/penetration_points.json"
+    mjcf_path = "mjcf/shadow2/left_hand.xml"
+    contact_points_path = "mjcf/shadow2/left_hand_contact_points.json"
+    penetration_points_path = None
     device = "cuda:0"
 
     hand_model = HandModel(
@@ -141,6 +167,14 @@ def test_self_penetration():
     ########### Visualize via plotly ###########
     hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=1, color="lightslategray", with_contact_points=True)
 
+    xp = torch.tensor([[[-0.0374, 0.0117, 0.0237]]], device=device)
+
+    # Visualize the query point
+    xp = xp.detach().cpu().numpy()
+    hand_en_plotly.append(
+        go.Scatter3d(x=xp[0, :, 0], y=xp[0, :, 1], z=xp[0, :, 2], mode="markers", marker=dict(color="blue", size=10))
+    )
+
     fig = go.Figure(hand_en_plotly)
     fig.update_layout(paper_bgcolor="#E2F0D9", plot_bgcolor="#E2F0D9")
     fig.update_layout(scene_aspectmode="data")
@@ -162,4 +196,6 @@ if __name__ == "__main__":
         datefmt="%Y-%m-%d %H:%M:%S",  # 时间格式
     )
 
-    test_self_penetration()
+    test()
+    # test_cal_distance()
+    # test_self_penetration()

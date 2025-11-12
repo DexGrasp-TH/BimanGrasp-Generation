@@ -1,0 +1,23 @@
+hand_params:
+  name: "shadow2"
+
+initialization:
+  left_hand_joint_mu: [-0.1, 0, 0.6, 0, 
+                        0, 0, 0.6, 0, 
+                        -0.1, 0, 0.6, 0, 
+                        0, -0.2, 0, 0.6, 0, 
+                        0, 1.2, 0, -0.2, 0]
+  right_hand_joint_mu: [-0.1, 0, 0.6, 0, 
+                        0, 0, 0.6, 0, 
+                        -0.1, 0, 0.6, 0, 
+                        0, -0.2, 0, 0.6, 0, 
+                        0, 1.2, 0, -0.2, 0]
+
+paths:
+  right_hand_mjcf: "mjcf/shadow2/right_hand.xml"
+  right_hand_vis_mjcf:
+  left_hand_mjcf: "mjcf/shadow2/left_hand.xml"
+  left_hand_vis_mjcf:
+  right_contact_points: "mjcf/shadow2/right_hand_contact_points.json"
+  left_contact_points: "mjcf/shadow2/left_hand_contact_points.json"
+  penetration_points: 

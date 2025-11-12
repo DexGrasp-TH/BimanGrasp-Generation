@@ -8,37 +8,14 @@ import math
 import os
 
 
-# Global Constants - Joint and Transform Names
-JOINT_NAMES = [
-    "robot0:FFJ3",
-    "robot0:FFJ2",
-    "robot0:FFJ1",
-    "robot0:FFJ0",
-    "robot0:MFJ3",
-    "robot0:MFJ2",
-    "robot0:MFJ1",
-    "robot0:MFJ0",
-    "robot0:RFJ3",
-    "robot0:RFJ2",
-    "robot0:RFJ1",
-    "robot0:RFJ0",
-    "robot0:LFJ4",
-    "robot0:LFJ3",
-    "robot0:LFJ2",
-    "robot0:LFJ1",
-    "robot0:LFJ0",
-    "robot0:THJ4",
-    "robot0:THJ3",
-    "robot0:THJ2",
-    "robot0:THJ1",
-    "robot0:THJ0",
-]
+# Global Constants - Transform Names
 TRANSLATION_NAMES = ["WRJTx", "WRJTy", "WRJTz"]
 ROTATION_NAMES = ["WRJRx", "WRJRy", "WRJRz"]
 
-# Default Joint Angles for Initialization
-LEFT_HAND_JOINT_MU = [0.1, 0, -0.6, 0, 0, 0, -0.6, 0, -0.1, 0, -0.6, 0, 0, -0.2, 0, -0.6, 0, 0, -1.2, 0, -0.2, 0]
-RIGHT_HAND_JOINT_MU = [0.1, 0, 0.6, 0, 0, 0, 0.6, 0, -0.1, 0, 0.6, 0, 0, -0.2, 0, 0.6, 0, 0, 1.2, 0, -0.2, 0]
+
+@dataclass
+class HandConfig:
+    name = None
 
 
 @dataclass
@@ -46,14 +23,14 @@ class PathConfig:
     """File and directory path configuration."""
 
     # MJCF and mesh paths
-    right_hand_mjcf: str = "mjcf/right_shadow_hand.xml"
-    right_hand_vis_mjcf: str = None
-    left_hand_mjcf: str = "mjcf/left_shadow_hand.xml"
-    left_hand_vis_mjcf: str = None
-    mesh_path: str = "mjcf/meshes"
-    right_contact_points: str = "mjcf/right_hand_contact_points.json"
-    left_contact_points: str = "mjcf/left_hand_contact_points.json"
-    penetration_points: str = "mjcf/penetration_points.json"
+    right_hand_mjcf: str = ""
+    right_hand_vis_mjcf: str = ""
+    left_hand_mjcf: str = ""
+    left_hand_vis_mjcf: str = ""
+    mesh_path: str = ""
+    right_contact_points: str = ""
+    left_contact_points: str = ""
+    penetration_points: str = ""
 
     # Data paths
     # data_root_path: str = '../data/meshdata'
@@ -117,6 +94,8 @@ class OptimizerConfig:
     # Iteration settings
     num_iterations: int = 10000  # Number of optimization iterations
 
+    joint_limit_clamp = False
+
     # Compatibility properties for MALAOptimizer
     @property
     def initial_temperature(self) -> float:
@@ -154,6 +133,9 @@ class InitializationConfig:
 
     # Contact points
     num_contacts: int = 4  # Number of contact points per hand
+
+    left_hand_joint_mu = None
+    right_hand_joint_mu = None
 
 
 @dataclass
@@ -199,6 +181,7 @@ class ExperimentConfig:
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     initialization: InitializationConfig = field(default_factory=InitializationConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    hand: HandConfig = field(default_factory=HandConfig)
 
     # Derived properties
     @property

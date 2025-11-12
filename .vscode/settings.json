@@ -27,8 +27,9 @@
         "./third_party/pytorch_kinematics/pytorch_kinematics",
     ],
     "python.analysis.exclude": [
+        "data",
         "assets",
-        "output"
+        "BimanGrasp-Optimization/outputs",
     ],
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
