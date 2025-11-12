@@ -12,6 +12,8 @@ import pytorch3d.structures
 import pytorch3d.ops
 import plotly.graph_objects as go
 import logging
+import copy
+import re
 
 from mr_utils.utils_calc import sciR, transformPositions, posQuat2Isometry3d, quatWXYZ2XYZW
 from pytorch3d.transforms.rotation_conversions import quaternion_to_matrix
@@ -33,6 +35,17 @@ def load_mujoco_model(mjcf_path, load_mode="xml_string"):
         model = mujoco.MjModel.from_xml_path(mjcf_path)
     elif load_mode == "xml_string":
         data = open(mjcf_path).read()
+
+        # # replace 'meshdir' relative to the mjcf file with 'meshdir' relative to the workspace folder.
+        # match = re.search(r'meshdir="([^"]*)"', data)
+        # if match:
+        #     old_meshdir = match.group(1)
+        #     prefix = os.path.basename(mjcf_path)
+        #     new_meshdir = os.path.join(prefix, old_meshdir)
+        #     data = re.sub(r'meshdir="[^"]*"', f'meshdir="{new_meshdir}"', data)
+        # else:
+        #     raise ValueError("No meshdir found in the XML file")
+
         model = mujoco.MjModel.from_xml_string(data)
 
     return model
@@ -79,9 +92,9 @@ def extract_trimesh_from_mjcf(model, use_chamfer_box=True):
         if model.geom_type[geom_id] == mujoco.mjtGeom.mjGEOM_MESH:
             mesh_id = model.geom_dataid[geom_id]
             # mesh_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_MESH, mesh_id)
-            mesh_scale = model.mesh_scale[mesh_id].tolist()
             trimesh = get_trimesh_from_mjmodel_mesh(model, mesh_id)
-            trimesh.apply_scale(mesh_scale)
+            # mesh_scale = model.mesh_scale[mesh_id].tolist()  # only get the sign
+            # trimesh.apply_scale(mesh_scale)  # should not apply scale
         elif model.geom_type[geom_id] == mujoco.mjtGeom.mjGEOM_BOX:
             size = model.geom_size[geom_id]  # 3-dim box size
             if use_chamfer_box:
@@ -276,9 +289,6 @@ class HandModel:
         self.joints_lower, self.joints_upper = self.chain.get_joint_limits()
         self.joints_lower = torch.tensor(self.joints_lower).float().to(self.device)
         self.joints_upper = torch.tensor(self.joints_upper).float().to(self.device)
-        # TODO: this is just a temp workaround. The xml for left and right hand should be self-contained.
-        if self.handedness == "left_hand":
-            self.joints_lower, self.joints_upper = -self.joints_upper, -self.joints_lower
 
         ############## Sample surface points ##############
         # uniformly sample points from the hand surface, according to each link's area
@@ -322,15 +332,20 @@ class HandModel:
         )
         self.n_contact_candidates = self.contact_candidates.shape[0]
 
-        self.penetration_keypoints = [self.mesh[link_name]["penetration_keypoints"] for link_name in self.mesh]
-        self.global_index_to_link_index_penetration = sum(
-            [[i] * len(penetration_keypoints) for i, penetration_keypoints in enumerate(self.penetration_keypoints)], []
-        )
-        self.penetration_keypoints = torch.cat(self.penetration_keypoints, dim=0)
-        self.global_index_to_link_index_penetration = torch.tensor(
-            self.global_index_to_link_index_penetration, dtype=torch.long, device=self.device
-        )
-        self.n_keypoints = self.penetration_keypoints.shape[0]
+        if self.mesh[link_name]["penetration_keypoints"] is not None:
+            self.penetration_keypoints = [self.mesh[link_name]["penetration_keypoints"] for link_name in self.mesh]
+            self.global_index_to_link_index_penetration = sum(
+                [
+                    [i] * len(penetration_keypoints)
+                    for i, penetration_keypoints in enumerate(self.penetration_keypoints)
+                ],
+                [],
+            )
+            self.penetration_keypoints = torch.cat(self.penetration_keypoints, dim=0)
+            self.global_index_to_link_index_penetration = torch.tensor(
+                self.global_index_to_link_index_penetration, dtype=torch.long, device=self.device
+            )
+            self.n_keypoints = self.penetration_keypoints.shape[0]
 
     # def _build_adjacency_mask(self):
     #     # TODO: make it more flexible to contact pairs or exluded contacts
@@ -357,29 +372,54 @@ class HandModel:
             collision_mask: a matrix mask specifiying whether requiring collision check between two links.
                 False: no need for collision check; True: need collision check.
         """
-        # TODO: support reading excluded contacts from xml.
-
-        self.collision_mask = torch.zeros([len(self.mesh), len(self.mesh)], dtype=torch.bool, device=self.device)
 
         model = self.mj_model
         n_contact_pairs = model.npair  # the contact pair specified in mujoco xml
 
-        if n_contact_pairs == 0:
-            raise NotImplementedError("Currently only support contact pair information in xml.")
+        if n_contact_pairs > 0:
+            self.collision_mask = torch.zeros([len(self.mesh), len(self.mesh)], dtype=torch.bool, device=self.device)
+            for i in range(n_contact_pairs):
+                geom1_id = model.pair_geom1[i]
+                geom2_id = model.pair_geom2[i]
+                body1_id = model.geom_bodyid[geom1_id]
+                body2_id = model.geom_bodyid[geom2_id]
+                body1_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body1_id)
+                body2_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body2_id)
+                parent_id = self.link_name_to_link_index[body1_name]
+                child_id = self.link_name_to_link_index[body2_name]
+                self.collision_mask[parent_id, child_id] = self.collision_mask[child_id, parent_id] = True
 
-        for i in range(n_contact_pairs):
-            geom1_id = model.pair_geom1[i]
-            geom2_id = model.pair_geom2[i]
+        else:
+            self.collision_mask = torch.ones([len(self.mesh), len(self.mesh)], dtype=torch.bool, device=self.device)
+            # exclude self-collision-detection
+            self.collision_mask.fill_diagonal_(False)
+            # exclude all adjacent bodies
+            body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i) for i in range(model.nbody)]
+            for i in range(1, model.nbody):
+                body1_id = model.body_parentid[i]
+                body2_id = i
+                body1_name = body_names[body1_id]
+                body2_name = body_names[body2_id]
+                if body1_name in self.link_name_to_link_index and body2_name in self.link_name_to_link_index:
+                    parent_id = self.link_name_to_link_index[body1_name]
+                    child_id = self.link_name_to_link_index[body2_name]
+                    self.collision_mask[parent_id, child_id] = self.collision_mask[child_id, parent_id] = False
+            # exclude body-pairs specified in the xml
+            if model.nexclude > 0:
+                for i in range(model.nexclude):
+                    # reference: https://github.com/google-deepmind/mujoco/blob/4e46db89037de9a2e388dfbb830b97ec37c4326c/src/engine/engine_io.c#L2032
+                    body1_id = model.exclude_signature[i] & 0xFFFF
+                    body2_id = model.exclude_signature[i] >> 16
+                    body1_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body1_id)
+                    body2_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body2_id)
+                    # print(f"body1_name: {body1_name}, body2_name: {body2_name}")
+                    if body1_name in self.link_name_to_link_index and body2_name in self.link_name_to_link_index:
+                        parent_id = self.link_name_to_link_index[body1_name]
+                        child_id = self.link_name_to_link_index[body2_name]
+                        self.collision_mask[parent_id, child_id] = self.collision_mask[child_id, parent_id] = False
 
-            body1_id = model.geom_bodyid[geom1_id]
-            body2_id = model.geom_bodyid[geom2_id]
-            body1_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body1_id)
-            body2_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body2_id)
-
-            parent_id = self.link_name_to_link_index[body1_name]
-            child_id = self.link_name_to_link_index[body2_name]
-
-            self.collision_mask[parent_id, child_id] = self.collision_mask[child_id, parent_id] = True
+    def get_joint_names(self):
+        return copy.copy(self.joints_names)
 
     def set_parameters(self, hand_pose, contact_point_indices=None):
         """
@@ -467,8 +507,12 @@ class HandModel:
             if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
                 face_verts = geom["face_verts"]
                 dis_local, dis_signs, _, _ = compute_sdf(x_in_geom, face_verts)
+                # # DEBUG
+                # if link_name == "lh_thdistal":
+                #     print(f"link_name: {link_name}, geom_type: {geom_type}, dis_local[513]: {dis_local[513]}")
                 dis_local = torch.sqrt(dis_local + 1e-8)
                 dis_local = dis_local * (-dis_signs)
+
             elif geom_type == mujoco.mjtGeom.mjGEOM_CAPSULE:
                 half_height = geom["geom_size"][1]
                 radius = geom["geom_size"][0]
@@ -485,7 +529,7 @@ class HandModel:
                 dis_local = -inside_distance + outside_distance
             elif geom_type == mujoco.mjtGeom.mjGEOM_SPHERE:
                 radius = geom["geom_size"][0]
-                dis_local = self.mesh[link_name]["radius"] - x_in_geom.norm(dim=1)
+                dis_local = radius - x_in_geom.norm(dim=1)
             else:
                 raise NotImplementedError(f"Unsupported geom type in calculate_distance(): {geom_type}!")
 
@@ -527,18 +571,17 @@ class HandModel:
 
         dis_max = torch.max(torch.stack(dis, dim=0), dim=0)[0]  # the max distance to other links of each surface point
 
-        # # check whether the link names are correct
+        # # DEBUG: check whether the link names are correct
         # sp_idx = torch.argmax(dis_max)
         # max_dis = dis_max[:, sp_idx]
         # link_index = self.surface_points_link_indices[sp_idx].item()
-
         # link_index_to_link_name = {v: k for k, v in self.link_name_to_link_index.items()}
         # link_name = link_index_to_link_name[link_index]
         # print(f"link 1 name: {link_name}, sp_idx: {sp_idx}")
-
-        # for i, link_name in enumerate(self.mesh):
+        # print(f"pos of this point in base: {x[0, sp_idx]}")
+        # for i, link2_name in enumerate(self.mesh):
         #     d = dis[i]
-        #     print(f"link 2 name: {link_name}, d[:, sp_idx]: {d[:, sp_idx]}")
+        #     print(f"link 2 name: {link2_name}, d[:, sp_idx]: {d[:, sp_idx]}")
 
         return dis_max
 
@@ -699,3 +742,53 @@ class HandModel:
                 )
 
         return data
+
+    def pick_contact_candidates(self, i, target_link_name):
+        import pyvista as pv
+
+        plotter = pv.Plotter()
+
+        target_link_tf_inv = self.current_status[target_link_name].inverse()  # base in target link frame
+
+        for link_name in self.mesh:
+            v = self.current_status[link_name].transform_points(self.mesh[link_name]["vertices"])
+            if len(v.shape) == 3:
+                v = v[i]
+            # transform vertices to the target link frame
+            v = target_link_tf_inv.transform_points(v)
+            # v = v @ self.global_rotation[i].T + self.global_translation[i]
+            vertices = v.detach().cpu().numpy()
+            faces = self.mesh[link_name]["faces"].detach().cpu().numpy()
+
+            # Convert faces to PyVista format: prepend number of points per face
+            faces_flat = np.hstack([np.insert(f, 0, len(f)) for f in faces])
+            # Create PolyData mesh
+            mesh = pv.PolyData(vertices, faces_flat)
+
+            if link_name == target_link_name:
+                mesh = mesh.subdivide(3)  # more dense vertices
+                plotter.add_mesh(mesh, show_edges=True)
+                # plotter.add_points(mesh.points, color="white", point_size=5)
+            else:
+                plotter.add_mesh(mesh)
+
+        # Add axes at origin
+        plotter.add_mesh(pv.Arrow(start=(0, 0, 0), direction=(2, 0, 0), scale=0.02), color="r")  # X-axis
+        plotter.add_mesh(pv.Arrow(start=(0, 0, 0), direction=(0, 2, 0), scale=0.02), color="g")  # Y-axis
+        plotter.add_mesh(pv.Arrow(start=(0, 0, 0), direction=(0, 0, 2), scale=0.02), color="b")  # Z-axis
+
+        plotter.add_text("Close the window to continue.", font_size=20, color="black", position="lower_left")
+
+        picked_points = []
+
+        def callback(point, event):
+            print("Picked point:", plotter.picked_point)
+            picked_points.append(plotter.picked_point.tolist())
+
+        plotter.enable_point_picking(callback=callback, use_picker=True, show_message=True)  # use_mesh -> use_picker
+
+        # Visualize
+        plotter.show()
+
+        print(f"picked points: {picked_points}")
+        return picked_points

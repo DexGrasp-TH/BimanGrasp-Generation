@@ -5,3 +5,6 @@ thirdparty/pytorch_kinematics
 thirdparty/uitls_python
 
 BimanGrasp-Optimization/outputs/*
+
+*/MUJOCO_LOG.TXT
+**/MUJOCO_LOG.TXT
