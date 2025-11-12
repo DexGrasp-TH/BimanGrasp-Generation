@@ -45,8 +45,8 @@ optimizer:
   step_size: 0.005
   stepsize_period: 50
   momentum: 0.98
-  num_iterations: 10000
-  joint_limit_clamp: False
+  num_iterations: 6000 # 10000
+  joint_limit_clamp: True
 
 initialization:
   distance_lower: 0.2
@@ -59,9 +59,9 @@ initialization:
   right_hand_joint_mu:
 
 model:
-  n_surface_points: 2000
-  num_samples: 2000
+  n_surface_points: 2000 # surface points on each hand
+  num_samples: 2000 # surface points on object
   size: "large"
-  batch_size: 4 # 128
-  batch_size_each: 5
-  max_total_batch_size: 100
+  batch_size: 128 # 128
+  batch_size_each: 5 # Batch size per object, not used?
+  max_total_batch_size: 100 # not used?

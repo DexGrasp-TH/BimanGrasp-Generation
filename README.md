@@ -53,6 +53,11 @@ You can install everything step by step.
 
 ---
 
+7. Link the object folder.
+   ```bash
+   ln -s <target_object_folder> data/object
+   ```
+
 ## Usage
 
 ```bash

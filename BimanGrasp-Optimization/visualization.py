@@ -65,10 +65,10 @@ def main(cfg: DictConfig):
     # hyper-parameters
     object_code = "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
     grasp_idx_lst = [0, 1, 2, 3]
-    result_path = "../data/experiments/debug2/results"
-    device = "cpu"
+    result_path = f"../data/experiments/{cfg.name}/results"
+    device = "cuda:0"
     load_intermediate_results = True
-    step = 10000
+    step = 1000
 
     right_hand_model = HandModel(
         mjcf_path=config.paths.right_hand_mjcf,
@@ -97,6 +97,8 @@ def main(cfg: DictConfig):
     )
 
     for idx in grasp_idx_lst:
+        print(f"grasp_idx: {idx}")
+
         # load results
         if load_intermediate_results:
             data_dict = np.load(os.path.join(result_path, object_code + f"_{step}.npy"), allow_pickle=True)[idx]
@@ -135,9 +137,8 @@ def main(cfg: DictConfig):
         left_hand_pose = build_hand_pose(
             left_qpos, translation_names, rot_names, left_hand_model.get_joint_names(), device
         )
-
-        print(f"left_qpos: {left_qpos}")
-        print(f"right_qpos: {right_qpos}")
+        # print(f"left_qpos: {left_qpos}")
+        # print(f"right_qpos: {right_qpos}")
 
         left_hand_pose_st = None
         if "qpos_left_st" in data_dict:
