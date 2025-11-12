@@ -1,43 +1,7 @@
 # BimanGrasp-Generation
-This is the official repository for the open-source implementation of the BimanGrasp Algorithm for synthesizing bimanual grasps on 3D objects of our RA-L and ICRA 2025 paper:
-
-<p align="center">
-  <h2 align="center">Bimanual Grasp Synthesis for Dexterous Robot Hands</h2>
-
-
-<p align="center">
-    <strong>Yanming Shao</strong></a>
-    ·
-    <strong>Chenxi Xiao*</strong>
- </p>
- 
-<h3 align="center">RA-L | presented at ICRA 25'</h3>
-
-<p align="center">
-    <a href="https://arxiv.org/abs/2411.15903">
-      <img src='https://img.shields.io/badge/Paper-green?style=for-the-badge&logo=adobeacrobatreader&logoColor=white&labelColor=66cc00&color=94DD15' alt='Paper PDF'>
-    </a>
-</p>
-
-# BimanGrasp Generation
-
-BimanGrasp is a differentiable optimization framework for generating stable bimanual dexterous grasps on diverse objects. The system leverages force closure estimation and SDF computing to produce physics-plausible bimanual grasps. 
-
 ---
 
 ## Installation
-
-### Option 1: Automatic Installation (Recommended)
-
-The easiest way for installation is to run the shell script:
-
-```bash
-bash install.sh
-```
-
-This will create a conda env named **bimangrasp**, installing **PyTorch 2.1.0** with **CUDA 11.8** support, **PyTorch3D (v0.7.8)**, and third-party dependencies (**TorchSDF** and **pytorch\_kinematics**).
-
-### Option 2: Manual Installation
 
 You can install everything step by step.
 
@@ -48,10 +12,10 @@ You can install everything step by step.
    conda activate bimangrasp
    ```
 
-2. **Install PyTorch (CUDA 11.8 support)**
+2. **Install PyTorch (CUDA 12 support)**
 
    ```bash
-   conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+   conda install pytorch==2.2.2 pytorch-cuda=12.1 -c pytorch -c nvidia 
    ```
 
 3. **Install PyTorch3D**
@@ -65,6 +29,7 @@ You can install everything step by step.
    ```bash
    conda install -c conda-forge transforms3d trimesh plotly rtree -y
    pip install urdf_parser_py scipy networkx tensorboard six omegaconf hydra-core
+   pip install mujoco
    ```
 
 5. **Build and install TorchSDF**
@@ -78,7 +43,10 @@ You can install everything step by step.
 6. **Install pytorch\_kinematics**
 
    ```bash
-   cd thirdparty/pytorch_kinematics
+   cd thirdparty
+   git clone git@github.com:DexGrasp-TH/pytorch_kinematics.git
+
+   cd pytorch_kinematics
    pip install -e .
    cd ../..
    ```
