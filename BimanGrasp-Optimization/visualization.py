@@ -29,10 +29,6 @@ def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
         if key in cfg:
             setattr(exp, key, cfg.get(key))
 
-    # Object code list (keep as python list)
-    if "object_code_list" in cfg:
-        exp.object_code_list = OmegaConf.to_object(cfg.object_code_list)
-
     # Helper to apply nested dict to dataclass-like object
     def apply_section(section_name, target_obj):
         if section_name in cfg:
@@ -68,7 +64,7 @@ def main(cfg: DictConfig):
     result_path = f"../data/experiments/{cfg.name}/results"
     device = "cuda:0"
     load_intermediate_results = True
-    step = 1000
+    step = 6000
 
     right_hand_model = HandModel(
         mjcf_path=config.paths.right_hand_mjcf,
