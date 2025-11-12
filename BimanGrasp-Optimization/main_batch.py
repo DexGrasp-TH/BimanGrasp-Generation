@@ -122,7 +122,11 @@ class GraspExperiment:
 
         # Create optimizer
         self.optimizer = MALAOptimizer(
-            self.bimanual_pair.left, self.bimanual_pair.right, config=self.config.optimizer, device=self.device
+            self.bimanual_pair.left,
+            self.bimanual_pair.right,
+            config=self.config.optimizer,
+            device=self.device,
+            total_batch_size=self.config.total_batch_size,
         )
 
     def setup_logging(self):
@@ -172,7 +176,7 @@ class GraspExperiment:
         results_path = self.config.paths.get_experiment_results_path(self.config.name)
 
         # Main optimization loop
-        for step in tqdm(range(1, self.config.optimizer.num_iterations + 1), desc="optimizing", miniters=10):
+        for step in tqdm(range(1, self.config.optimizer.num_iterations + 1), desc="optimizing", miniters=1):
             # MALA proposal step with Langevin dynamics
             step_size = self.optimizer.langevin_proposal()
 
@@ -211,7 +215,7 @@ class GraspExperiment:
                     show=False,
                 )
 
-                if (step + 1) % 1000 == 0:
+                if (step + 1) % 100 == 0:  # DEBUG
                     self.save_intermediate_results(step=step + 1, energy_terms=energy_terms)
 
         self.profiler.disable()

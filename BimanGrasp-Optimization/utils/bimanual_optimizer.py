@@ -21,6 +21,7 @@ class MALAOptimizer:
         preconditioning_decay=0.98,
         langevin_noise_factor=0.1,
         device="cpu",
+        total_batch_size=0,
     ):
         """
         Create a MALA optimizer for bimanual grasp optimization.
@@ -94,8 +95,14 @@ class MALAOptimizer:
 
         # Initialize EMA with zeros
         num_params = self.bimanual_pair.left.n_dofs + 9
-        self.ema_grad_left.value = torch.zeros(num_params, dtype=torch.float, device=device)
-        self.ema_grad_right.value = torch.zeros(num_params, dtype=torch.float, device=device)
+        self.individual_ema_grad = config.individual_ema_grad
+        self.mean_ema_grad_weight = config.mean_ema_grad_weight
+        if self.individual_ema_grad:
+            self.ema_grad_left.value = torch.zeros((total_batch_size, num_params), dtype=torch.float, device=device)
+            self.ema_grad_right.value = torch.zeros((total_batch_size, num_params), dtype=torch.float, device=device)
+        else:
+            self.ema_grad_left.value = torch.zeros(num_params, dtype=torch.float, device=device)
+            self.ema_grad_right.value = torch.zeros(num_params, dtype=torch.float, device=device)
 
     def langevin_proposal(self):
         """
@@ -118,6 +125,9 @@ class MALAOptimizer:
         current_temperature = self.initial_temperature * self.cooling_schedule ** torch.div(
             self.step, self.annealing_period, rounding_mode="floor"
         )
+
+        # # DEBUG
+        # print(f"current_step_size: {current_step_size}, current_temperature:{current_temperature}")
 
         # Save current states before making changes
         self.saved_states["left"], self.saved_states["right"] = self.bimanual_pair.save_states()
@@ -144,7 +154,13 @@ class MALAOptimizer:
         """
         # Update RMSProp preconditioning matrix
         if hand_model.hand_pose.grad is not None:
-            ema_grad.update((hand_model.hand_pose.grad**2).mean(0))
+            if self.individual_ema_grad:
+                w2 = self.mean_ema_grad_weight
+                w1 = 1 - w2
+                val = w1 * hand_model.hand_pose.grad**2 + w2 * (hand_model.hand_pose.grad**2).mean(0, keepdim=True)
+                ema_grad.update(val)
+            else:
+                ema_grad.update((hand_model.hand_pose.grad**2).mean(0))
 
             # Compute preconditioned gradient step (deterministic component)
             step_size_tensor = torch.zeros_like(hand_model.hand_pose) + step_size
