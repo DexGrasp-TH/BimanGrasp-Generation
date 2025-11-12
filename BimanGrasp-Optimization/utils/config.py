@@ -95,6 +95,8 @@ class OptimizerConfig:
     num_iterations: int = 10000  # Number of optimization iterations
 
     joint_limit_clamp = False
+    individual_ema_grad = False
+    mean_ema_grad_weight = 1.0
 
     # Compatibility properties for MALAOptimizer
     @property

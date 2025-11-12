@@ -59,12 +59,13 @@ def main(cfg: DictConfig):
     config = experiment_config_from_dict(cfg)
 
     # hyper-parameters
+    # object_code = "core_bottle_10dff3c43200a7a7119862dbccbaa609"
     object_code = "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
-    grasp_idx_lst = [0, 1, 2, 3]
+    grasp_idx_lst = [0]
     result_path = f"../data/experiments/{cfg.name}/results"
     device = "cuda:0"
     load_intermediate_results = True
-    step = 6000
+    step = 100
 
     right_hand_model = HandModel(
         mjcf_path=config.paths.right_hand_mjcf,
@@ -97,7 +98,9 @@ def main(cfg: DictConfig):
 
         # load results
         if load_intermediate_results:
-            data_dict = np.load(os.path.join(result_path, object_code + f"_{step}.npy"), allow_pickle=True)[idx]
+            data_dict = np.load(
+                os.path.join(result_path, "intermediate", object_code + f"_{step}.npy"), allow_pickle=True
+            )[idx]
         else:
             data_dict = np.load(os.path.join(result_path, object_code + ".npy"), allow_pickle=True)[idx]
 

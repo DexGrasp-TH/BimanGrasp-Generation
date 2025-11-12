@@ -7,11 +7,11 @@ defaults:
   - _self_
   - hand: shadow2
 
-# object_code_list:
-#   - "sem_Wii_effdc659515ff747eb2c6725049f8f"
-#   - "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
-object_code_list: 
 object_code_path: "../data/object/DGN_2k/valid_split/all.json"
+# object_code_list: 
+object_code_list:
+  - "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
+  - "core_bottle_10dff3c43200a7a7119862dbccbaa609"
 
 hand_params:
   name:
@@ -49,6 +49,8 @@ optimizer:
   momentum: 0.98
   num_iterations: 6000
   joint_limit_clamp: True
+  individual_ema_grad: True
+  mean_ema_grad_weight: 0.5
 
 initialization:
   distance_lower: 0.2
@@ -64,7 +66,7 @@ model:
   n_surface_points: 2000 # surface points on each hand
   num_samples: 2000 # surface points on object
   size: "large" # object scale sample range
-  batch_size: 128 # 128
+  batch_size: 4 # 128
   batch_size_each: 5 # Batch size per object, not used?
   max_total_batch_size: 1024
   multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
