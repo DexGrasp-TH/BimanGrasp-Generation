@@ -151,7 +151,7 @@ class ModelConfig:
 
     # Batch processing
     batch_size: int = 128  # Batch size for single experiments
-    batch_size_each: int = 5  # Batch size per object for large-scale
+    # batch_size_each: int = 5  # Batch size per object for large-scale
     max_total_batch_size: int = 100  # Maximum total batch size for multi-GPU
 
 
@@ -238,7 +238,8 @@ class ExperimentConfig:
                 setattr(self.initialization, attr, getattr(args, attr))
 
         # Update model parameters
-        model_attrs = ["batch_size", "batch_size_each", "max_total_batch_size"]
+        # model_attrs = ["batch_size", "batch_size_each", "max_total_batch_size"]
+        model_attrs = ["batch_size", "max_total_batch_size"]
         for attr in model_attrs:
             if hasattr(args, attr):
                 setattr(self.model, attr, getattr(args, attr))

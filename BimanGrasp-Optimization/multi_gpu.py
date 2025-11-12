@@ -10,10 +10,10 @@ from omegaconf import DictConfig, OmegaConf
 import json
 
 
-def worker(gpu_id, output_path, object_code_path):
+def worker(gpu_id, output_path, object_code_path, exp_name):
     with open(output_path, "w") as output_file:
         subprocess.call(
-            f"CUDA_VISIBLE_DEVICES={gpu_id} python main_batch.py object_code_path={object_code_path}",
+            f"CUDA_VISIBLE_DEVICES={gpu_id} python main_batch.py object_code_path={object_code_path} gpu={gpu_id} name={exp_name}",
             shell=True,
             stdout=output_file,
             stderr=output_file,
@@ -30,6 +30,7 @@ def main(cfg: DictConfig):
     """
 
     # get the cfg
+    exp_name = cfg.name
     multi_gpu_lst = cfg.model.multi_gpu_lst
     n_gpus = len(multi_gpu_lst)
     multi_gpu_cfg_path = os.path.join(cfg.paths.experiments_base, cfg.name, "multi_gpu_cfgs")
@@ -44,7 +45,7 @@ def main(cfg: DictConfig):
 
     # load the full object code list
     with open(cfg.object_code_path, "r") as f:
-        all_object_code_list = json.load(f)
+        all_object_code_list = sorted(json.load(f))
 
     # split the full object code list for each GPU
     batched_object_code_list = split_list(all_object_code_list, n_gpus)
@@ -65,6 +66,7 @@ def main(cfg: DictConfig):
                 gpu_id,
                 output_path,
                 object_code_list_paths[i],
+                exp_name,
             ),
         )
         p.start()
