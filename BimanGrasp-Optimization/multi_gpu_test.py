@@ -10,10 +10,10 @@ from omegaconf import DictConfig, OmegaConf
 import json
 
 
-def worker(gpu_id, output_path, object_code_path, exp_name):
+def worker(output_path, command):
     with open(output_path, "w") as output_file:
         subprocess.call(
-            f"CUDA_VISIBLE_DEVICES={gpu_id} python main_batch.py object_code_path={object_code_path} gpu={gpu_id} name={exp_name}",
+            command,
             shell=True,
             stdout=output_file,
             stderr=output_file,
@@ -29,44 +29,22 @@ def main(cfg: DictConfig):
     the Hydra-decorated entrypoint.
     """
 
-    # get the cfg
-    exp_name = cfg.name
-    multi_gpu_lst = cfg.model.multi_gpu_lst
-    n_gpus = len(multi_gpu_lst)
+    commands = ["python main_batch.py name=server_3 gpu=0 optimizer.mean_ema_grad_weight=1.0",
+                "python main_batch.py name=server_4 gpu=1 optimizer.mean_ema_grad_weight=0.5",
+                "python main_batch.py name=server_5 gpu=2 optimizer.mean_ema_grad_weight=0.0",]
+    
     multi_gpu_cfg_path = os.path.join(cfg.paths.experiments_base, cfg.name, "multi_gpu")
     os.makedirs(multi_gpu_cfg_path, exist_ok=True)
 
-    def split_list(lst, n_batch):
-        """
-        Split lst into n_batch sublists as evenly as possible.
-        """
-        k, m = divmod(len(lst), n_batch)
-        return [lst[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)] for i in range(n_batch)]
-
-    # load the full object code list
-    with open(cfg.object_code_path, "r") as f:
-        all_object_code_list = sorted(json.load(f))
-
-    # split the full object code list for each GPU
-    batched_object_code_list = split_list(all_object_code_list, n_gpus)
-    object_code_list_paths = []
-    for i, object_code_list in enumerate(batched_object_code_list):
-        path = os.path.join(multi_gpu_cfg_path, f"gpu_{multi_gpu_lst[i]}.json")
-        object_code_list_paths.append(path)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(object_code_list, f, indent=4, ensure_ascii=False)
-
     # run separated synthesis on multiple GPU
     p_list = []
-    for i, gpu_id in enumerate(multi_gpu_lst):
+    for i, command in enumerate(commands):
         output_path = os.path.join(multi_gpu_cfg_path, f"output_{i}.txt")
         p = multiprocessing.Process(
             target=worker,
             args=(
-                gpu_id,
                 output_path,
-                object_code_list_paths[i],
-                exp_name,
+                command,
             ),
         )
         p.start()

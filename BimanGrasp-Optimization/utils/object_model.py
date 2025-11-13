@@ -225,3 +225,21 @@ class ObjectModel:
         )
 
         return [mesh_data]
+
+    def get_trimesh_data(self, i, rgba, pose=None):
+        model_index = i // self.batch_size_each
+        batch_index = i % self.batch_size_each
+        model_scale = self.object_scale_tensor[model_index, batch_index].detach().cpu().numpy()
+        mesh = self.object_mesh_list[model_index]
+
+        # Scale vertices
+        vertices = mesh.vertices * model_scale
+
+        # Apply pose transformation if provided
+        if pose is not None:
+            pose = np.array(pose, dtype=np.float32)
+            vertices = vertices @ pose[:3, :3].T + pose[:3, 3]
+
+        mesh = tm.Trimesh(vertices=vertices, faces=mesh.faces, process=False)
+        mesh.visual.vertex_colors = rgba
+        return mesh

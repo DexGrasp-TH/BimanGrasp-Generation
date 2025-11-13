@@ -1,0 +1,17 @@
+debug: False
+
+object_code_list:
+  - "ddg_gd_box_poisson_005"
+  - "core_bottle_fa452996a220dd49257c84a0e95a18b0"
+  - "sem_Book_20dec770602a8ac2331999dc8823fe0d"
+  - "sem_Snowman_bf2384e841ca61805b2ecd212557fda0"
+  - "sem_CerealBox_fc6667707faff16544608b3255ca1886"
+  - "mujoco_Hasbro_Monopoly_Hotels_Game"
+
+grasp_idx_lst: [0, 1, 2, 3]
+opt_step_lst: [1000, 2000, 3000, 4000, 5000, 6000] # int
+
+# grasp_idx_lst: [0]
+# opt_step_lst: [1000] # int
+
+vis_start_pose: True

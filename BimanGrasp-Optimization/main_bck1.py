@@ -34,8 +34,6 @@ from utils.bimanual_handler import BimanualPair, save_grasp_results, EnergyTerms
 from utils.common import setup_device, set_random_seeds, ensure_directory
 from omegaconf import DictConfig, OmegaConf
 import hydra
-from typing import List
-import json
 
 
 class GraspExperiment:
@@ -97,8 +95,7 @@ class GraspExperiment:
             device=self.device,
             size=self.config.model.size,
         )
-        # self.object_model.initialize(self.config.object_code_list)
-        self.object_model.initialize(self.object_code_list)
+        self.object_model.initialize(self.config.object_code_list)
 
         # Initialize dual hands
         left_hand_model, right_hand_model = initialize_dual_hand(
@@ -122,11 +119,7 @@ class GraspExperiment:
 
         # Create optimizer
         self.optimizer = MALAOptimizer(
-            self.bimanual_pair.left,
-            self.bimanual_pair.right,
-            config=self.config.optimizer,
-            device=self.device,
-            total_batch_size=len(self.object_code_list) * self.config.model.batch_size,
+            self.bimanual_pair.left, self.bimanual_pair.right, config=self.config.optimizer, device=self.device
         )
 
     def setup_logging(self):
@@ -136,8 +129,8 @@ class GraspExperiment:
         logs_path = self.config.paths.get_experiment_logs_path(self.config.name)
         results_path = self.config.paths.get_experiment_results_path(self.config.name)
 
-        ensure_directory(logs_path, clean=False)
-        ensure_directory(results_path, clean=False)
+        ensure_directory(logs_path, clean=True)
+        ensure_directory(results_path, clean=True)
 
         # Create logger
         self.logger = Logger(
@@ -176,7 +169,7 @@ class GraspExperiment:
         results_path = self.config.paths.get_experiment_results_path(self.config.name)
 
         # Main optimization loop
-        for step in tqdm(range(1, self.config.optimizer.num_iterations + 1), desc="optimizing", miniters=1):
+        for step in tqdm(range(1, self.config.optimizer.num_iterations + 1), desc="optimizing"):
             # MALA proposal step with Langevin dynamics
             step_size = self.optimizer.langevin_proposal()
 
@@ -215,7 +208,7 @@ class GraspExperiment:
                     show=False,
                 )
 
-                if (step + 1) % 100 == 0:  # DEBUG
+                if (step + 1) % 500 == 0:
                     self.save_intermediate_results(step=step + 1, energy_terms=energy_terms)
 
         self.profiler.disable()
@@ -224,12 +217,10 @@ class GraspExperiment:
     def save_intermediate_results(self, step: int, energy_terms: EnergyTerms):
         """Save intermediate results during optimization."""
         results_path = self.config.paths.get_experiment_results_path(self.config.name)
-        results_path = os.path.join(results_path, "intermediate")
-        os.makedirs(results_path, exist_ok=True)
 
         save_grasp_results(
             results_path,
-            self.object_code_list,
+            self.config.object_code_list,
             self.config.model.batch_size,
             self.object_model,
             self.bimanual_pair,
@@ -247,7 +238,7 @@ class GraspExperiment:
 
         save_grasp_results(
             results_path,
-            self.object_code_list,
+            self.config.object_code_list,
             self.config.model.batch_size,
             self.object_model,
             self.bimanual_pair,
@@ -271,11 +262,9 @@ class GraspExperiment:
         else:
             print("Memory profiling unavailable (memory_profiler not installed)")
 
-    def run_full_experiment(self, object_code_list: List[str]) -> EnergyTerms:
+    def run_full_experiment(self) -> EnergyTerms:
         """Run the complete experiment pipeline."""
         print(f"Starting experiment: {self.config.name}")
-
-        self.object_code_list = object_code_list
 
         # Setup pipeline
         self.setup_environment()
@@ -310,8 +299,8 @@ def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
         if cfg.object_code_list:
             exp.object_code_list = OmegaConf.to_object(cfg.object_code_list)
         else:
-            with open(cfg.object_code_path, "r") as f:
-                exp.object_code_list = sorted(json.load(f))
+            exp.object_code_list = os.listdir(cfg.paths.data_root_path)  # all subfolder contained in the data_root_path
+    print(f"Size of object_code_list: {len(exp.object_code_list)}")
 
     # Helper to apply nested dict to dataclass-like object
     def apply_section(section_name, target_obj):
@@ -367,24 +356,7 @@ def main(cfg: DictConfig):
 
     # Run experiment
     experiment = GraspExperiment(config)
-
-    n_samples_per_obj = config.model.batch_size
-    max_object_per_batch = config.model.max_total_batch_size // n_samples_per_obj
-
-    def split_by_max_size(obj_list, max_object_per_batch):
-        """
-        Split obj_list into batches with at most max_object_per_batch items each.
-        """
-        return [obj_list[i : i + max_object_per_batch] for i in range(0, len(obj_list), max_object_per_batch)]
-
-    all_object_code_list = config.object_code_list
-    batched_object_code_list = split_by_max_size(all_object_code_list, max_object_per_batch)
-
-    for i_batch, object_code_list in enumerate(batched_object_code_list):
-        print("\n=========================================")
-        print(f"Batch id: {i_batch}")
-        print("object_code_list: ", object_code_list)
-        final_energy_terms = experiment.run_full_experiment(object_code_list)
+    final_energy_terms = experiment.run_full_experiment()
 
 
 if __name__ == "__main__":

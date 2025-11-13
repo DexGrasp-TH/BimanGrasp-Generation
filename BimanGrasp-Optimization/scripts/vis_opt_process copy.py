@@ -15,8 +15,6 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 import re
 import imageio
-import trimesh as tm
-import pyrender
 
 from utils.hand_model import HandModel
 from utils.object_model import ObjectModel
@@ -96,57 +94,6 @@ def get_scene(plot_lst):
     return scene_fixed
 
 
-def look_at(cam_pos, target=np.array([0,0,0]), up=np.array([0,0,1])):
-    """
-    Compute a 4x4 camera pose matrix that points from cam_pos to target.
-
-    Args:
-        cam_pos: (3,) array-like, camera position in world coordinates
-        target: (3,) array-like, point to look at
-        up: (3,) array-like, world up direction
-
-    Returns:
-        pose: (4,4) numpy array, camera pose matrix for pyrender
-    """
-    cam_pos = np.array(cam_pos, dtype=np.float64)
-    target = np.array(target, dtype=np.float64)
-    up = np.array(up, dtype=np.float64)
-
-    # forward vector (from camera to target)
-    forward = target - cam_pos
-    forward /= np.linalg.norm(forward)
-
-    # right vector
-    right = np.cross(forward, up)
-    right /= np.linalg.norm(right)
-
-    # true up vector
-    true_up = np.cross(right, forward)
-    true_up /= np.linalg.norm(true_up)
-
-    # construct 4x4 pose matrix
-    pose = np.eye(4)
-    pose[:3, 0] = right       # X axis
-    pose[:3, 1] = true_up     # Y axis
-    pose[:3, 2] = -forward    # Z axis points forward in pyrender
-    pose[:3, 3] = cam_pos     # translation
-
-    return pose
-
-
-# --- Utility to build hand pose tensor ---
-def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
-    """Build a torch tensor for hand pose given qpos dict."""
-    rot = np.array(transforms3d.euler.euler2mat(*[qpos[name] for name in rot_names]))
-    rot = rot[:, :2].T.ravel().tolist()  # flatten first two rotation columns
-    hand_pose = torch.tensor(
-        [qpos[name] for name in translation_names] + rot + [qpos[name] for name in joint_names],
-        dtype=torch.float,
-        device=device,
-    )
-    return hand_pose
-
-
 @hydra.main(config_path="../cfg", config_name="base", version_base=None)  # must use version_base=None for compatibility
 def main(cfg: DictConfig):
     """Hydra entrypoint. Builds ExperimentConfig from config.yaml and runs the experiment."""
@@ -191,11 +138,23 @@ def main(cfg: DictConfig):
     )
     object_model.initialize(object_code_list)
 
+    # --- Utility to build hand pose tensor ---
+    def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
+        """Build a torch tensor for hand pose given qpos dict."""
+        rot = np.array(transforms3d.euler.euler2mat(*[qpos[name] for name in rot_names]))
+        rot = rot[:, :2].T.ravel().tolist()  # flatten first two rotation columns
+        hand_pose = torch.tensor(
+            [qpos[name] for name in translation_names] + rot + [qpos[name] for name in joint_names],
+            dtype=torch.float,
+            device=device,
+        )
+        return hand_pose
+
     for i_obj, object_code in enumerate(object_code_list):
         for idx in grasp_idx_lst:
             pattern = os.path.join(result_path, f"{object_code}_*.npy")
             files = sorted(glob.glob(pattern), key=natural_key)
-            files = files[::10] + [files[-1]]
+            # files = files[1:][::4]
 
             right_hand_pose_lst = []
             left_hand_pose_lst = []
@@ -207,7 +166,9 @@ def main(cfg: DictConfig):
                 print(f"opt_step: {opt_step}")
 
                 # --- Initialize models ---
-                object_model.object_scale_tensor[i_obj] = data_dict["scale"]
+                object_model.object_scale_tensor = torch.tensor(
+                    data_dict["scale"], dtype=torch.float, device=device
+                ).reshape(1, 1)
 
                 # --- Load qpos and construct hand poses ---
                 if file == files[0] and "qpos_right_st" in data_dict:
@@ -239,65 +200,82 @@ def main(cfg: DictConfig):
                 left_hand_pose_lst.append(left_hand_pose)
                 opt_step_lst.append(opt_step)
 
+            # --- Visualization ---
+            # Final poses (solid colors)
             right_hand_model.set_parameters(torch.stack(right_hand_pose_lst, dim=0).to(device))
             left_hand_model.set_parameters(torch.stack(left_hand_pose_lst, dim=0).to(device))
 
-            # --- Visualization and save images ---
-            save_dir = os.path.join(exp_path, f"visualizations/opt_process/{object_code}/grasp_{idx}")
+            # # Example color choices
+            right_color = "lightslategray"
+            left_color = "lightcoral"
+            # Transparency gradient: from 0.2 (transparent) → 1.0 (opaque)
+            num_steps = len(right_hand_pose_lst)
+            opacities = torch.linspace(0.2, 1.0, num_steps).tolist()
 
-            for i_plot in range(len(right_hand_pose_lst)):
-              
-                right_hand_mesh = right_hand_model.get_trimesh_data(i=i_plot, rgba=[0.467, 0.533, 0.600, 0.7], with_contact_points=False)
-                left_hand_mesh = left_hand_model.get_trimesh_data(i=i_plot, rgba=[0.941, 0.502, 0.502, 0.7], with_contact_points=False)
-                object_mesh = object_model.get_trimesh_data(i=i_obj, rgba=[1.0, 0.961, 0.933, 0.5])
+            plot_lst = []
+            for i_plot, opacity in enumerate(opacities):
+                right_plot = right_hand_model.get_plotly_data(
+                    i=i_plot, opacity=opacity, color=right_color, with_contact_points=False
+                )
+                left_plot = left_hand_model.get_plotly_data(
+                    i=i_plot, opacity=opacity, color=left_color, with_contact_points=False
+                )
+                plot_lst += right_plot
+                plot_lst += left_plot
 
-                all_meshes = right_hand_mesh + left_hand_mesh + [object_mesh]
-                # 创建 pyrender 场景
-                scene = pyrender.Scene(bg_color=[226/255, 240/255, 217/255, 1.0])  # 背景色 #E2F0D9\
+            object_plot = object_model.get_plotly_data(i=i_obj, color="seashell", opacity=1.0)
+            plot_lst += object_plot
 
-                # TODO: Transparency has not been successfually set.
+            # # Show a figure with the whole optimization process
+            # fig = go.Figure(plot_lst)
+            # fig.update_layout(
+            #     paper_bgcolor="#E2F0D9",
+            #     plot_bgcolor="#E2F0D9",
+            #     scene_aspectmode="data",
+            #     scene=dict(
+            #         xaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+            #         yaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+            #         zaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+            #     ),
+            # )
+            # fig.show()
 
-                # 添加所有 mesh
-                for m in all_meshes:
-                    # 使用默认材质，支持 RGBA
-                    if hasattr(m.visual, 'vertex_colors') and m.visual.vertex_colors.shape[1] == 4:
-                        # 如果 Trimesh 有 RGBA
-                        color = m.visual.vertex_colors[0] / 255.0
-                    else:
-                        color = [0.8, 0.8, 0.8, 1.0]
-                    material = pyrender.MetallicRoughnessMaterial(
-                        baseColorFactor=color,
-                        metallicFactor=0.0,
-                        roughnessFactor=0.9
+            save_animation = True
+            if save_animation:
+                # 屏蔽 kaleido 日志
+                logging.getLogger("kaleido").setLevel(logging.WARNING)
+                # 屏蔽 choreographer 日志
+                logging.getLogger("choreographer").setLevel(logging.WARNING)
+
+                scene_fixed = get_scene(plot_lst)
+                camera = dict(
+                    eye=dict(x=0.8, y=0.8, z=0.8),  # fixed view angle
+                    center=dict(x=0, y=0, z=0),
+                )
+
+                filenames = []
+                save_dir = os.path.join(exp_path, f"visualizations/opt_process/{object_code}/grasp_{idx}")
+                for i_plot in range(num_steps):
+                    fig = go.Figure(
+                        right_hand_model.get_plotly_data(i=i_plot, opacity=1.0, color=right_color)
+                        + left_hand_model.get_plotly_data(i=i_plot, color=left_color)
+                        + object_model.get_plotly_data(i=0, color="seashell")
                     )
-                    mesh_pyr = pyrender.Mesh.from_trimesh(m, material=material)
-                    scene.add(mesh_pyr)
+                    fig.update_layout(
+                        scene=scene_fixed,
+                        scene_camera=camera,
+                        paper_bgcolor="#E2F0D9",
+                        plot_bgcolor="#E2F0D9",
+                    )
+                    path = os.path.join(save_dir, f"step_{opt_step_lst[i_plot]}.jpg")
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    fig.write_image(path, width=1920, height=1080)  # engine: "kaleido"
+                    filenames.append(path)
+                    print(f"Save image {path}.")
 
-                # 添加相机
-                camera = pyrender.PerspectiveCamera(yfov=np.pi / 4.0)
-                cam_pos = [0.7, 0.7, 0.7]   # 相机位置
-                target = [0.0, 0.0, 0.0]    # 看向原点
-                cam_pose = look_at(cam_pos, target)
-                scene.add(camera, pose=cam_pose)
-
-                # 添加光源
-                light = pyrender.DirectionalLight(color=np.ones(3), intensity=3.0)
-                scene.add(light, pose=cam_pose)
-
-                # 离屏渲染
-                os.environ['PYOPENGL_PLATFORM'] = 'egl' # use EGL on headless server
-                r = pyrender.OffscreenRenderer(viewport_width=1920, viewport_height=1080)
-                color, _ = r.render(scene)
-                r.delete()  # 释放 GPU/CPU 资源
-
-                # 保存图像
-                path = os.path.join(save_dir, f"step_{opt_step_lst[i_plot]}.png")
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                imageio.imwrite(path, color)  # 直接用 imageio 保存
-                print(f"Saved image {path}")
-
-
-
+                # 合成为 gif
+                images = [imageio.v2.imread(f) for f in filenames]
+                imageio.mimsave(os.path.join(save_dir, "ani.gif"), images, fps=1)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@
       "program": "${file}",
       "cwd": "${workspaceFolder}/BimanGrasp-Optimization",
       "console": "integratedTerminal",
-      // "args": ["--object_code", "sem_Wii_effdc659515ff747eb2c6725049f8f", "--num", "2"]
+      "args": ["task=filter", "name=server_3", ]
     }
   ]
 }

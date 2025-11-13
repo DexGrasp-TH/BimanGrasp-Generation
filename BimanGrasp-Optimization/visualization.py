@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from omegaconf import DictConfig, OmegaConf
 import hydra
+import logging
 
 from utils.hand_model import HandModel
 from utils.object_model import ObjectModel
@@ -19,6 +20,31 @@ from utils.config import ExperimentConfig
 translation_names = ["WRJTx", "WRJTy", "WRJTz"]
 rot_names = ["WRJRx", "WRJRy", "WRJRz"]
 
+
+def get_scene(plot_lst):
+    # --- 从plotly数据中提取顶点 ---
+    xs, ys, zs = [], [], []
+    for trace in plot_lst:
+        if hasattr(trace, "x") and hasattr(trace, "y") and hasattr(trace, "z"):
+            xs.extend(trace.x)
+            ys.extend(trace.y)
+            zs.extend(trace.z)
+
+    xs, ys, zs = np.array(xs), np.array(ys), np.array(zs)
+
+    # --- 计算范围 ---
+    xmin, xmax = xs.min(), xs.max()
+    ymin, ymax = ys.min(), ys.max()
+    zmin, zmax = zs.min(), zs.max()
+
+    scene_fixed = dict(
+        xaxis=dict(range=[xmin, xmax], visible=False, showgrid=False),
+        yaxis=dict(range=[ymin, ymax], visible=False, showgrid=False),
+        zaxis=dict(range=[zmin, zmax], visible=False, showgrid=False),
+        aspectmode="manual",
+        aspectratio=dict(x=1, y=1, z=1),
+    )
+    return scene_fixed
 
 def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
     """Convert a Hydra DictConfig to ExperimentConfig dataclass."""
@@ -61,7 +87,7 @@ def main(cfg: DictConfig):
     # hyper-parameters
     # object_code = "core_bottle_10dff3c43200a7a7119862dbccbaa609"
     object_code = "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
-    grasp_idx_lst = [0]
+    grasp_idx_lst = [1]
     result_path = f"../data/experiments/{cfg.name}/results"
     device = "cuda:0"
     load_intermediate_results = True
@@ -179,6 +205,7 @@ def main(cfg: DictConfig):
             )
 
         # Combine everything
+        plot_lst = right_plot + left_plot + object_plot + start_plots
         fig = go.Figure(right_plot + left_plot + object_plot + start_plots)
 
         fig.update_layout(
@@ -194,6 +221,10 @@ def main(cfg: DictConfig):
 
         fig.show()
 
+        # 屏蔽 kaleido 日志
+        logging.getLogger("kaleido").setLevel(logging.WARNING)
+        # 屏蔽 choreographer 日志
+        logging.getLogger("choreographer").setLevel(logging.WARNING)
 
 if __name__ == "__main__":
     main()

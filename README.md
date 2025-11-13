@@ -27,9 +27,10 @@ You can install everything step by step.
 4. **Install other dependencies**
 
    ```bash
-   conda install -c conda-forge transforms3d trimesh kaleido plotly rtree -y
-   pip install urdf_parser_py scipy networkx tensorboard six omegaconf hydra-core
+   conda install -c conda-forge transforms3d trimesh kaleido imageio plotly rtree -y
+   pip install urdf_parser_py scipy networkx tensorboard six omegaconf hydra-core 
    pip install mujoco
+   pip install 'pyglet<2'
    ```
 
 5. **Build and install TorchSDF**

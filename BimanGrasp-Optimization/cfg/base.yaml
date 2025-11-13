@@ -2,16 +2,25 @@
 name: "debug"
 seed: 1
 gpu: "0"
+n_worker: 96
 
 defaults:
   - _self_
   - hand: shadow2
+  - task: 
+
+task_name: ${hydra:runtime.choices.task}
+hand_name: ${hydra:runtime.choices.hand}
 
 object_code_path: "../data/object/DGN_2k/valid_split/all.json"
 # object_code_list: 
 object_code_list:
-  - "core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"
-  - "core_bottle_10dff3c43200a7a7119862dbccbaa609"
+  - "ddg_gd_box_poisson_005"
+  - "core_bottle_fa452996a220dd49257c84a0e95a18b0"
+  - "sem_Book_20dec770602a8ac2331999dc8823fe0d"
+  - "sem_Snowman_bf2384e841ca61805b2ecd212557fda0"
+  - "sem_CerealBox_fc6667707faff16544608b3255ca1886"
+  - "mujoco_Hasbro_Monopoly_Hotels_Game"
 
 hand_params:
   name:
@@ -50,7 +59,7 @@ optimizer:
   num_iterations: 6000
   joint_limit_clamp: True
   individual_ema_grad: True
-  mean_ema_grad_weight: 0.5
+  mean_ema_grad_weight: 1.0
 
 initialization:
   distance_lower: 0.2
@@ -66,7 +75,6 @@ model:
   n_surface_points: 2000 # surface points on each hand
   num_samples: 2000 # surface points on object
   size: "large" # object scale sample range
-  batch_size: 4 # 128
-  batch_size_each: 5 # Batch size per object, not used?
+  batch_size: 128 # 128
   max_total_batch_size: 1024
   multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
