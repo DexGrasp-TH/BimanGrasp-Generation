@@ -43,6 +43,7 @@ def set_seed(seed: int = 42):
 
     print(f"Random seed set to: {seed}")
 
+
 # --- Utility to build hand pose tensor ---
 def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
     """Build a torch tensor for hand pose given qpos dict."""
@@ -166,16 +167,13 @@ def test_self_penetration():
         handedness="left_hand",
     )
 
-    
+    # load hand pose
     grasp_data_path = "../data/experiments/server_3/results/ddg_gd_box_poisson_005.npy"
     grasp_idx = 0
     data_dict = np.load(grasp_data_path, allow_pickle=True)[grasp_idx]
-
     qpos = data_dict["qpos_left"]
     joint_names = hand_model.get_joint_names()
-    hand_pose = build_hand_pose(
-        qpos, TRANSLATION_NAMES, ROTATION_NAMES, joint_names, device
-    ).reshape(1, -1)
+    hand_pose = build_hand_pose(qpos, TRANSLATION_NAMES, ROTATION_NAMES, joint_names, device).reshape(1, -1)
 
     contact_point_indices = torch.arange(0, hand_model.contact_candidates.shape[0]).to(device).reshape(1, -1)
 
@@ -187,13 +185,12 @@ def test_self_penetration():
     ########### Visualize via plotly ###########
     hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=1, color="lightslategray", with_contact_points=True)
 
-    xp = torch.tensor([[[-0.0374, 0.0117, 0.0237]]], device=device)
-
-    # Visualize the query point
-    xp = xp.detach().cpu().numpy()
-    hand_en_plotly.append(
-        go.Scatter3d(x=xp[0, :, 0], y=xp[0, :, 1], z=xp[0, :, 2], mode="markers", marker=dict(color="blue", size=10))
-    )
+    # xp = torch.tensor([[[-0.0123, 0.0120, 0.0613]]], device=device)
+    # # Visualize the query point
+    # xp = xp.detach().cpu().numpy()
+    # hand_en_plotly.append(
+    #     go.Scatter3d(x=xp[0, :, 0], y=xp[0, :, 1], z=xp[0, :, 2], mode="markers", marker=dict(color="blue", size=10))
+    # )
 
     fig = go.Figure(hand_en_plotly)
     fig.update_layout(paper_bgcolor="#E2F0D9", plot_bgcolor="#E2F0D9")

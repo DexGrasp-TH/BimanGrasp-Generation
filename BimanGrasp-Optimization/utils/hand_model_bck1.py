@@ -7,10 +7,7 @@ from scipy.spatial.transform import Rotation as sciR
 import mujoco
 import numpy as np
 import json
-
-# from torchsdf import index_vertices_by_faces, compute_sdf
-import kaolin
-from kaolin.ops.mesh import index_vertices_by_faces
+from torchsdf import index_vertices_by_faces, compute_sdf
 import pytorch3d.structures
 import pytorch3d.ops
 import plotly.graph_objects as go
@@ -254,10 +251,8 @@ class HandModel:
                 n_link_vertices += len(vertices)
 
                 if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
-                    v = torch.tensor(mesh.vertices, dtype=torch.float, device=self.device).unsqueeze(0)  # in geom frame
+                    v = torch.tensor(mesh.vertices, dtype=torch.float, device=self.device)  # defined in geom frame
                     f = torch.tensor(mesh.faces, dtype=torch.long, device=self.device)
-                    geom_dict.update({"vertices": v})
-                    geom_dict.update({"faces": f})
                     geom_dict.update({"face_verts": index_vertices_by_faces(v, f)})
                 self.mesh[link_name]["geoms"].append(geom_dict)
 
@@ -510,21 +505,12 @@ class HandModel:
             x_in_geom = x_in_geom.reshape(-1, 3)  # (total_batch_size * num_samples, 3)
 
             if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
-                verts = geom["vertices"]
-                faces = geom["faces"]
                 face_verts = geom["face_verts"]
-
-                # SDF computation based on kaolin, instead of TorchSDF
-                dis_local, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_in_geom.unsqueeze(0), face_verts)
-                dis_signs = kaolin.ops.mesh.check_sign(verts, faces, x_in_geom.unsqueeze(0))  # True if inside mesh
-                dis_local = dis_local.squeeze(0)  # square distances
-                dis_signs = torch.where(dis_signs, -1.0, 1.0).squeeze(0)
-
-                # # DEBUG
-                # if link_name == "lh_thdistal":
-                #     print(f"link_name: {link_name}, geom_type: {geom_type}, dis_local[305]: {dis_local[305]}")
-                #     a = 1
-
+                dis_local, dis_signs, _, _ = compute_sdf(x_in_geom, face_verts)
+                # DEBUG
+                if link_name == "lh_thdistal":
+                    print(f"link_name: {link_name}, geom_type: {geom_type}, dis_local[305]: {dis_local[305]}")
+                    a = 1
                 dis_local = torch.sqrt(dis_local + 1e-8)
                 dis_local = dis_local * (-dis_signs)
 
@@ -586,17 +572,17 @@ class HandModel:
 
         dis_max = torch.max(torch.stack(dis, dim=0), dim=0)[0]  # the max distance to other links of each surface point
 
-        # # DEBUG: check whether the link names are correct
-        # sp_idx = torch.argmax(dis_max)
-        # max_dis = dis_max[:, sp_idx]
-        # link_index = self.surface_points_link_indices[sp_idx].item()
-        # link_index_to_link_name = {v: k for k, v in self.link_name_to_link_index.items()}
-        # link_name = link_index_to_link_name[link_index]
-        # print(f"link 1 name: {link_name}, sp_idx: {sp_idx}")
-        # print(f"pos of this point in base: {x[0, sp_idx]}")
-        # for i, link2_name in enumerate(self.mesh):
-        #     d = dis[i]
-        #     print(f"link 2 name: {link2_name}, d[:, {sp_idx}]: {d[:, sp_idx]}")
+        # DEBUG: check whether the link names are correct
+        sp_idx = torch.argmax(dis_max)
+        max_dis = dis_max[:, sp_idx]
+        link_index = self.surface_points_link_indices[sp_idx].item()
+        link_index_to_link_name = {v: k for k, v in self.link_name_to_link_index.items()}
+        link_name = link_index_to_link_name[link_index]
+        print(f"link 1 name: {link_name}, sp_idx: {sp_idx}")
+        print(f"pos of this point in base: {x[0, sp_idx]}")
+        for i, link2_name in enumerate(self.mesh):
+            d = dis[i]
+            print(f"link 2 name: {link2_name}, d[:, {sp_idx}]: {d[:, sp_idx]}")
 
         return dis_max
 
