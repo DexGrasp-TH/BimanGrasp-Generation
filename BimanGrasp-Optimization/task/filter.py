@@ -244,7 +244,7 @@ class GraspExperiment:
 
             # DEBUG check
             obj_idx = 0
-            grasp_idx = 0
+            grasp_idx = 2
             print(f"obj_name: {object_code_list[obj_idx]}, grasp_idx: {grasp_idx}")
 
             keys = ["total", "force_closure", "distance", "penetration", "self_penetration", "joint_limits", "wrench_volume"]

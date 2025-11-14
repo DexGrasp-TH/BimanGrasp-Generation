@@ -65,21 +65,15 @@ You can install everything step by step.
 
 ## Usage
 
+### Hand Mesh Preprocess
 The TorchSDF cannot correctly process meshes with acute angles between adjacent faces [Issue](https://github.com/wrc042/TorchSDF#note). Please check the meshes of your hand. To preprocess the hand meshes, you can follow these procedures
-1. Cut unnecessary parts in Blender
+1. Cut unnecessary parts in Blender. Add bevel to the sharp edges. (Manually)
 2. Use `scripts/smooth_mesh.py` to smooth and simplify the given mesh. 
 3. Use `scripts/check_mesh_sign.py` to compare the calcuated signs by kaolin and torchSDF to final-check the mesh.
+4. If there exist wrong results, check which edge is inappropriate, and modify it in Blender. Then, re-smooth and re-check the mesh through above scripts.
 
+### Grasp Synthesis
 
-```bash
-# Generate bimanual grasps
-python main.py
-
-# Visualize results
-python visualization.py --object_code <object_name> --num <grasp_index>
-```
-
-While BimanGrasp-Generation is able to work with any 3D object mesh, this repository contains a mini demo on 5 randomly sample objects. To prepare your own objects, you could follow the asset processing script and instructions by DexGraspNet: https://github.com/PKU-EPIC/DexGraspNet/tree/main/asset_process
 
 ## Demo Visualization
 

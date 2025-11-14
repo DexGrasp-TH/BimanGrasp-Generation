@@ -56,7 +56,7 @@ optimizer:
   step_size: 0.005
   stepsize_period: 50
   momentum: 0.98
-  num_iterations: 6000
+  num_iterations: 3000
   joint_limit_clamp: True
   individual_ema_grad: True
   mean_ema_grad_weight: 1.0

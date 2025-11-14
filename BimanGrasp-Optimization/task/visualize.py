@@ -336,26 +336,24 @@ def save_grasp_images(params):
         save_dir = os.path.join(exp_path, f"visualizations/opt_process/{object_code}/grasp_{grasp_idx}")
         os.makedirs(save_dir, exist_ok=True)
 
-        # === 视角1 ===
-        cam_pose_1 = look_at([0.7, 0.7, 0.7], [0, 0, 0])
-        cam_node = scene.add(camera, pose=cam_pose_1)
-        light_node = scene.add(light, pose=cam_pose_1)
-        color_1, _ = r.render(scene)
-        scene.remove_node(cam_node)  # 移除相机
-        scene.remove_node(light_node)  # 移除光源
-        path_1 = os.path.join(save_dir, f"step_{opt_step}_view_1.jpg")
-        imageio.imwrite(path_1, color_1)
+        cam_pose_lst = [[0.7, 0.7, 0.7],
+                        [0.7, -0.7, 0.7],
+                        [-0.7, 0.7, 0.7],
+                        [-0.7, -0.7, -0.7],
+                        ]
 
-        # === 视角2 ===
-        cam_pose_2 = look_at([-0.7, -0.7, -0.7], [0, 0, 0])
-        scene.add(camera, pose=cam_pose_2)
-        scene.add(light, pose=cam_pose_2)
-        color_2, _ = r.render(scene)
-        path_2 = os.path.join(save_dir, f"step_{opt_step}_view_2.jpg")
-        imageio.imwrite(path_2, color_2)
+        for i_cam, cam_pose in enumerate(cam_pose_lst):
+            cam_pose = look_at(cam_pose, [0, 0, 0])
+            cam_node = scene.add(camera, pose=cam_pose)
+            light_node = scene.add(light, pose=cam_pose)
+            color, _ = r.render(scene)
+            scene.remove_node(cam_node)  # 移除相机
+            scene.remove_node(light_node)  # 移除光源
+            path = os.path.join(save_dir, f"step_{opt_step}_view_{i_cam}.jpg")
+            imageio.imwrite(path, color)
 
         r.delete()  # 释放 GPU/CPU 资源
-        print(f"Saved images: {path_1} | {os.path.basename(path_2)}.")
+        print(f"Saved images: {save_dir}/step_{opt_step}")
 
 
 def task_visualize(cfg: DictConfig):
