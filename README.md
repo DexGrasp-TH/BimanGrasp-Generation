@@ -65,7 +65,10 @@ You can install everything step by step.
 
 ## Usage
 
-The TorchSDF cannot correctly process meshes with acute angles between adjacent faces [Issue](https://github.com/wrc042/TorchSDF#note). Please check the meshes of your hand. To preprocess the hand meshes, first cut unnecessary parts in Blender, then use `scripts/smooth_mesh.py` to smooth and simplify the given mesh. 
+The TorchSDF cannot correctly process meshes with acute angles between adjacent faces [Issue](https://github.com/wrc042/TorchSDF#note). Please check the meshes of your hand. To preprocess the hand meshes, you can follow these procedures
+1. Cut unnecessary parts in Blender
+2. Use `scripts/smooth_mesh.py` to smooth and simplify the given mesh. 
+3. Use `scripts/check_mesh_sign.py` to compare the calcuated signs by kaolin and torchSDF to final-check the mesh.
 
 
 ```bash

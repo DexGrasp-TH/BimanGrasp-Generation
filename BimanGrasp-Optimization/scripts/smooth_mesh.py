@@ -18,7 +18,7 @@ import open3d as o3d
 import numpy as np
 
 # hyper-parameters
-meshpath = "mjcf/shadow2/assets/f_distal_pst_cut.obj"
+meshpath = "mjcf/shadow2/assets/f_distal_pst_cut4.obj"
 proc_meshpath = "mjcf/shadow2/assets/f_distal_pst_cut_sm.obj"
 target_faces = 500  # final mesh
 
@@ -28,11 +28,15 @@ mesh = trimesh.load(meshpath)
 
 # Get axis-aligned bounding box
 bbox = mesh.bounds  # shape (2,3): [[min_x, min_y, min_z], [max_x, max_y, max_z]]
+origin = np.mean(bbox, axis=0)
 # Compute size along each axis
 bbox_size = bbox[1] - bbox[0]
 print("Bounding box min:", bbox[0])
 print("Bounding box max:", bbox[1])
 print("Bounding box size (x, y, z):", bbox_size)
+
+# # convex
+# mesh = mesh.convex_hull
 
 # Re-triangulate (improve distribution)
 dense_mesh = mesh.subdivide_to_size(max_edge=0.5)
@@ -40,6 +44,7 @@ dense_mesh = mesh.subdivide_to_size(max_edge=0.5)
 # Smooth
 smooth_mesh = copy.copy(dense_mesh)
 smoothing.filter_taubin(smooth_mesh, lamb=1.0, iterations=20)
+# smoothing.filter_laplacian(smooth_mesh, lamb=1.0, iterations=20)
 
 # Convex
 smooth_mesh = smooth_mesh.convex_hull
@@ -64,7 +69,7 @@ final_mesh = copy.copy(simplified_mesh)
 # Compute dihedral angles (in radians)
 dihedral_angles = final_mesh.face_adjacency_angles  # array of angles between adjacent faces' normals
 # Check for acute angles
-acute_mask = dihedral_angles >= (np.pi / 2) - 1e-2
+acute_mask = dihedral_angles >= np.deg2rad(85)  # tighter than 90 degree
 if np.any(acute_mask):
     print("!!! Mesh has acute angles !!!")
     print("Number of acute angles:", np.sum(acute_mask))

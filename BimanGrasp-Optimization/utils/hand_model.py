@@ -534,13 +534,16 @@ class HandModel:
                 elif self.sdf_tool == "torchsdf":
                     dis_local, dis_signs, _, _ = torchsdf.compute_sdf(x_in_geom, face_verts)
 
-                # # DEBUG
-                # if link_name == "lh_thdistal":
-                #     print(f"link_name: {link_name}, geom_type: {geom_type}, dis_local[305]: {dis_local[305]}")
-                #     a = 1
-
                 dis_local = torch.sqrt(dis_local + 1e-8)
                 dis_local = dis_local * (-dis_signs)
+
+                # # DEBUG
+                # if link_name == "rh_lfdistal":
+                #     point_idx = 0
+                #     print(
+                #         f"link_name: {link_name}, geom_type: {geom_type}, dis_local[{point_idx}]: {dis_local[point_idx]}"
+                #     )
+                #     a = 1
 
             elif geom_type == mujoco.mjtGeom.mjGEOM_CAPSULE:
                 half_height = geom["geom_size"][1]
@@ -567,13 +570,12 @@ class HandModel:
 
         dis_max = torch.max(torch.stack(dis_all, dim=0), dim=0)[0]  # max distance to all geoms of this link
 
-        # DEBUG
-        print(f"link_name: {link_name}")
-        print(f"dis_max: {dis_max[0].max()}")
-
-        if link_name == "rh_lfdistal":
-            idx = torch.argmax(dis_max[0])
-            a = 1
+        # # DEBUG
+        # print(f"link_name: {link_name}")
+        # print(f"dis_max: {dis_max[0].max()}")
+        # if link_name == "rh_lfdistal":
+        #     idx = torch.argmax(dis_max[0])
+        #     a = 1
 
         return dis_max
 
