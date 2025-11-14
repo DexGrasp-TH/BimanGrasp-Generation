@@ -1,0 +1,78 @@
+import bpy
+import bmesh
+import math
+
+def bevel_sharp_edges(obj, angle_threshold_deg=30, bevel_width=0.005, bevel_segments=3):
+    if obj.type != 'MESH':
+        raise TypeError("Selected object must be a mesh")
+
+    angle_threshold = math.radians(angle_threshold_deg)
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    mesh = obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    # 取消所有选择
+    for e in bm.edges:
+        e.select = False
+
+    # 遍历边并选择锐角边
+    for e in bm.edges:
+        if len(e.link_faces) != 2:
+            continue
+        n1 = e.link_faces[0].normal
+        n2 = e.link_faces[1].normal
+        if n1.angle(n2) < angle_threshold:
+            e.select = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    # 执行 Bevel
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='EDGE')
+    bpy.ops.mesh.bevel(offset=bevel_width, segments=bevel_segments, profile=0.5)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    print(f"Beveled edges with angle < {angle_threshold_deg}° on object '{obj.name}'")
+    
+
+def convex_obj(obj):
+    # 确保对象为网格
+    if obj.type != 'MESH':
+        raise TypeError("Active object must be a mesh")
+
+    # 切换到对象模式
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # 创建 BMesh
+    mesh = obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+
+    # 将 BMesh 写回对象
+    bm.to_mesh(mesh)
+    bm.free()
+
+    # 进入编辑模式
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+
+    # 调用 Convex Hull 操作
+    bpy.ops.mesh.convex_hull(delete_unused=True)
+
+    # 回到对象模式
+    bpy.ops.object.mode_set(mode='OBJECT')
+    
+    print(f"Convex the object '{obj.name}'")
+
+# 使用示例
+obj = bpy.context.active_object
+
+convex_obj(obj)
+bevel_sharp_edges(obj, angle_threshold_deg=30, bevel_width=0.01, bevel_segments=5)

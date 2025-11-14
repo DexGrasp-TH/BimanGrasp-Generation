@@ -182,7 +182,7 @@ def test_self_penetration():
     print(f"E_spen: {E_spen}.")
 
     ########### Visualize via plotly ###########
-    hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=1, color="lightslategray", with_contact_points=True)
+    hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=0.6, color="lightslategray", with_contact_points=True)
 
     # xp = torch.tensor([[[-0.0123, 0.0120, 0.0613]]], device=device)
     # # Visualize the query point

@@ -46,6 +46,7 @@ def get_scene(plot_lst):
     )
     return scene_fixed
 
+
 def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
     """Convert a Hydra DictConfig to ExperimentConfig dataclass."""
     exp = ExperimentConfig()
@@ -91,7 +92,7 @@ def main(cfg: DictConfig):
     result_path = f"../data/experiments/{cfg.name}/results"
     device = "cuda:0"
     load_intermediate_results = True
-    step = 100
+    step = 1800
 
     right_hand_model = HandModel(
         mjcf_path=config.paths.right_hand_mjcf,
@@ -225,6 +226,7 @@ def main(cfg: DictConfig):
         logging.getLogger("kaleido").setLevel(logging.WARNING)
         # 屏蔽 choreographer 日志
         logging.getLogger("choreographer").setLevel(logging.WARNING)
+
 
 if __name__ == "__main__":
     main()

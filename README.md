@@ -32,10 +32,9 @@ You can install everything step by step.
    pip install mujoco
    pip install 'pyglet<2'
 
+   # for developing
    pip install kaolin==0.15.0 -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.1.0_cu121.html
 
-   # use blender to smooth hand mesh
-   pip install bpy
    ```
 
 5. **Build and install TorchSDF**
@@ -65,6 +64,9 @@ You can install everything step by step.
    ```
 
 ## Usage
+
+The TorchSDF cannot correctly process meshes with acute angles between adjacent faces [Issue](https://github.com/wrc042/TorchSDF#note). Please check the meshes of your hand. To preprocess the hand meshes, first cut unnecessary parts in Blender, then use `scripts/smooth_mesh.py` to smooth and simplify the given mesh. 
+
 
 ```bash
 # Generate bimanual grasps

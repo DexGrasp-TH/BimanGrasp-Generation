@@ -259,7 +259,9 @@ class HandModel:
                     if self.sdf_tool == "kaolin":
                         geom_dict.update({"vertices": v})
                         geom_dict.update({"faces": f})
-                        geom_dict.update({"face_verts": kaolin.ops.mesh.index_vertices_by_faces(v.unsqueeze(0), f).unsqueeze(0)})
+                        geom_dict.update(
+                            {"face_verts": kaolin.ops.mesh.index_vertices_by_faces(v.unsqueeze(0), f).unsqueeze(0)}
+                        )
                     elif self.sdf_tool == "torchsdf":
                         geom_dict.update({"face_verts": torchsdf.index_vertices_by_faces(v, f)})
 
@@ -515,16 +517,20 @@ class HandModel:
 
             if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
                 face_verts = geom["face_verts"]
-                
+
                 if self.sdf_tool == "kaolin":
                     # SDF computation based on kaolin, instead of TorchSDF
                     verts = geom["vertices"]
                     faces = geom["faces"]
-                    dis_local, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_in_geom.unsqueeze(0), face_verts.unsqueeze(0))
-                    dis_signs = kaolin.ops.mesh.check_sign(verts.unsqueeze(0), faces, x_in_geom.unsqueeze(0))  # True if inside mesh
+                    dis_local, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(
+                        x_in_geom.unsqueeze(0), face_verts.unsqueeze(0)
+                    )
+                    dis_signs = kaolin.ops.mesh.check_sign(
+                        verts.unsqueeze(0), faces, x_in_geom.unsqueeze(0)
+                    )  # True if inside mesh
                     dis_local = dis_local.squeeze(0)  # square distances
                     dis_signs = torch.where(dis_signs, -1.0, 1.0).squeeze(0)
-                
+
                 elif self.sdf_tool == "torchsdf":
                     dis_local, dis_signs, _, _ = torchsdf.compute_sdf(x_in_geom, face_verts)
 
@@ -765,7 +771,7 @@ class HandModel:
                 )
 
         return data
-    
+
     def get_trimesh_data(self, i, rgba, pose=None, with_contact_points=False, with_axes=False):
         if pose is not None:
             pose = np.array(pose, dtype=np.float32)

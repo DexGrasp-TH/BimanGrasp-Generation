@@ -79,11 +79,11 @@
     <mesh class="right_hand" file="f_knuckle.obj"/>
     <mesh class="right_hand" file="f_proximal.obj"/>
     <mesh class="right_hand" file="f_middle.obj"/>
-    <mesh class="right_hand" file="f_distal_pst_cvx.obj"/>
+    <mesh class="right_hand" file="f_distal_pst_cut_sm.obj"/>
     <mesh class="right_hand" file="lf_metacarpal.obj"/>
     <mesh class="right_hand" file="th_proximal.obj"/>
     <mesh class="right_hand" file="th_middle.obj"/>
-    <mesh class="right_hand" file="th_distal_pst_cvx.obj"/>
+    <mesh class="right_hand" file="th_distal_pst_cut_sm.obj"/>
   </asset>
 
   <worldbody>
@@ -120,8 +120,8 @@
               <inertial mass="0.013" pos="0 0 0.0130769" quat="1 0 0 1"
                 diaginertia="1.28092e-06 1.12092e-06 5.3e-07"/>
               <joint name="rh_FFJ1" class="middle_distal"/>
-              <geom class="plastic_visual" mesh="f_distal_pst_cvx"/>
-              <geom class="plastic_collision" type="mesh" mesh="f_distal_pst_cvx"/>
+              <geom class="plastic_visual" mesh="f_distal_pst_cut_sm"/>
+              <geom class="plastic_collision" type="mesh" mesh="f_distal_pst_cut_sm"/>
             </body>
           </body>
         </body>
@@ -145,8 +145,8 @@
               <inertial mass="0.013" pos="0 0 0.0130769" quat="1 0 0 1"
                 diaginertia="1.28092e-06 1.12092e-06 5.3e-07"/>
               <joint name="rh_MFJ1" class="middle_distal"/>
-              <geom class="plastic_visual" mesh="f_distal_pst_cvx"/>
-              <geom class="plastic_collision" type="mesh" mesh="f_distal_pst_cvx"/>
+              <geom class="plastic_visual" mesh="f_distal_pst_cut_sm"/>
+              <geom class="plastic_collision" type="mesh" mesh="f_distal_pst_cut_sm"/>
             </body>
           </body>
         </body>
@@ -170,8 +170,8 @@
               <inertial mass="0.013" pos="0 0 0.0130769" quat="1 0 0 1"
                 diaginertia="1.28092e-06 1.12092e-06 5.3e-07"/>
               <joint name="rh_RFJ1" class="middle_distal"/>
-              <geom class="plastic_visual" mesh="f_distal_pst_cvx"/>
-              <geom class="plastic_collision" type="mesh" mesh="f_distal_pst_cvx"/>
+              <geom class="plastic_visual" mesh="f_distal_pst_cut_sm"/>
+              <geom class="plastic_collision" type="mesh" mesh="f_distal_pst_cut_sm"/>
             </body>
           </body>
         </body>
@@ -200,8 +200,8 @@
                 <inertial mass="0.013" pos="0 0 0.0130769" quat="1 0 0 1"
                   diaginertia="1.28092e-06 1.12092e-06 5.3e-07"/>
                 <joint name="rh_LFJ1" class="middle_distal"/>
-                <geom class="plastic_visual" mesh="f_distal_pst_cvx"/>
-                <geom class="plastic_collision" type="mesh" mesh="f_distal_pst_cvx"/>
+                <geom class="plastic_visual" mesh="f_distal_pst_cut_sm"/>
+                <geom class="plastic_collision" type="mesh" mesh="f_distal_pst_cut_sm"/>
               </body>
             </body>
           </body>
@@ -230,8 +230,8 @@
                 <inertial mass="0.017" pos="0 0 0.0145588" quat="1 0 0 1"
                   diaginertia="2.37794e-06 2.27794e-06 1e-06"/>
                 <joint name="rh_THJ1" class="thdistal"/>
-                <geom class="plastic_visual" mesh="th_distal_pst_cvx"/>
-                <geom class="plastic_collision" type="mesh" mesh="th_distal_pst_cvx"/>
+                <geom class="plastic_visual" mesh="th_distal_pst_cut_sm"/>
+                <geom class="plastic_collision" type="mesh" mesh="th_distal_pst_cut_sm"/>
               </body>
             </body>
           </body>
