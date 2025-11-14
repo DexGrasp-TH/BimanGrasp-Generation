@@ -9,7 +9,7 @@ object_code_list:
   - "mujoco_Hasbro_Monopoly_Hotels_Game"
 
 grasp_idx_lst: [0, 1, 2, 3]
-opt_step_lst: [1000, 2000, 3000] # int
+opt_step_lst: [1000, 2000, 3000, 4000, 5000, 6000] # int
 
 # grasp_idx_lst: [0]
 # opt_step_lst: [1000] # int

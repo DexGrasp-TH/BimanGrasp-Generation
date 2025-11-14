@@ -115,15 +115,24 @@ def test_cal_distance():
         handedness="right_hand",
     )
 
-    hand_pos = torch.zeros((3,), device=device)
-    hand_rot = torch.eye(3, device=device)[:, :2].T.reshape(-1)
-    hand_q = (hand_model.joints_lower + hand_model.joints_upper) / 2
-    hand_pose = torch.cat([hand_pos, hand_rot, hand_q]).reshape(1, -1)
+    # hand_pos = torch.zeros((3,), device=device)
+    # hand_rot = torch.eye(3, device=device)[:, :2].T.reshape(-1)
+    # hand_q = (hand_model.joints_lower + hand_model.joints_upper) / 2
+    # hand_pose = torch.cat([hand_pos, hand_rot, hand_q]).reshape(1, -1)
+
+    # load hand pose
+    grasp_data_path = "../data/experiments/server_3/results/ddg_gd_box_poisson_005.npy"
+    grasp_idx = 0
+    data_dict = np.load(grasp_data_path, allow_pickle=True)[grasp_idx]
+    qpos = data_dict["qpos_right"]
+    joint_names = hand_model.get_joint_names()
+    hand_pose = build_hand_pose(qpos, TRANSLATION_NAMES, ROTATION_NAMES, joint_names, device).reshape(1, -1)
+
     contact_point_indices = torch.arange(0, hand_model.contact_candidates.shape[0]).to(device).reshape(1, -1)
 
     hand_model.set_parameters(hand_pose, contact_point_indices)
 
-    xp = torch.tensor([0.0, 0.0, 0.15]).float().to(device).reshape(1, -1, 3)
+    xp = torch.tensor([-0.0138,  0.0385, -0.1159]).float().to(device).reshape(1, -1, 3)
     xp = xp.repeat(3, 2, 1)  # (B, N, 3)
     dis = hand_model.cal_distance(xp)
     print(f"dis: {dis}.")
@@ -213,5 +222,5 @@ if __name__ == "__main__":
     )
 
     # test()
-    # test_cal_distance()
-    test_self_penetration()
+    test_cal_distance()
+    # test_self_penetration()

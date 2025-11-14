@@ -566,6 +566,15 @@ class HandModel:
             dis_all.append(dis_local.reshape(x_in_base.shape[0], x_in_base.shape[1]))
 
         dis_max = torch.max(torch.stack(dis_all, dim=0), dim=0)[0]  # max distance to all geoms of this link
+
+        # DEBUG
+        print(f"link_name: {link_name}")
+        print(f"dis_max: {dis_max[0].max()}")
+
+        if link_name == "rh_lfdistal":
+            idx = torch.argmax(dis_max[0])
+            a = 1
+
         return dis_max
 
     def cal_distance(self, x):

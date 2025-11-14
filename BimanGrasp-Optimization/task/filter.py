@@ -243,16 +243,16 @@ class GraspExperiment:
             energy_terms = self.energy_computer.compute_all_energies(self.bimanual_pair, self.object_model, verbose=True)
 
             # DEBUG check
-            # obj_idx = 0
-            # grasp_idx = 1
-            # print(f"obj_name: {object_code_list[obj_idx]}, grasp_idx: {grasp_idx}")
+            obj_idx = 0
+            grasp_idx = 0
+            print(f"obj_name: {object_code_list[obj_idx]}, grasp_idx: {grasp_idx}")
 
-            # keys = ["total", "force_closure", "distance", "penetration", "self_penetration", "joint_limits", "wrench_volume"]
-            # for key in keys:
-            #     val = getattr(energy_terms, key).clone()
-            #     val = val.reshape(n_obj, n_samples_per_obj)
-            #     print(f"{key}: {val[obj_idx, grasp_idx]}")
-            # a = 1
+            keys = ["total", "force_closure", "distance", "penetration", "self_penetration", "joint_limits", "wrench_volume"]
+            for key in keys:
+                val = getattr(energy_terms, key).clone()
+                val = val.reshape(n_obj, n_samples_per_obj)
+                print(f"{key}: {val[obj_idx, grasp_idx]}")
+            a = 1
 
             # Filtering
             thres_pen = self.cfg.task.thres.penetration
