@@ -7,10 +7,8 @@ from scipy.spatial.transform import Rotation as sciR
 import mujoco
 import numpy as np
 import json
-
-# from torchsdf import index_vertices_by_faces, compute_sdf
 import kaolin
-from kaolin.ops.mesh import index_vertices_by_faces
+import torchsdf
 import pytorch3d.structures
 import pytorch3d.ops
 import plotly.graph_objects as go
@@ -143,6 +141,7 @@ class HandModel:
         n_surface_points=0,
         device="cpu",
         handedness=None,
+        sdf_tool="torchsdf",
     ):
         """
         Create a Hand Model for a MJCF robot
@@ -173,6 +172,7 @@ class HandModel:
         self.device = device
         self.handedness = handedness
         self.n_surface_points = n_surface_points
+        self.sdf_tool = sdf_tool
 
         self.logger = logging.getLogger(__name__)
 
@@ -254,11 +254,15 @@ class HandModel:
                 n_link_vertices += len(vertices)
 
                 if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
-                    v = torch.tensor(mesh.vertices, dtype=torch.float, device=self.device).unsqueeze(0)  # in geom frame
+                    v = torch.tensor(mesh.vertices, dtype=torch.float, device=self.device)  # in geom frame
                     f = torch.tensor(mesh.faces, dtype=torch.long, device=self.device)
-                    geom_dict.update({"vertices": v})
-                    geom_dict.update({"faces": f})
-                    geom_dict.update({"face_verts": index_vertices_by_faces(v, f)})
+                    if self.sdf_tool == "kaolin":
+                        geom_dict.update({"vertices": v})
+                        geom_dict.update({"faces": f})
+                        geom_dict.update({"face_verts": kaolin.ops.mesh.index_vertices_by_faces(v.unsqueeze(0), f).unsqueeze(0)})
+                    elif self.sdf_tool == "torchsdf":
+                        geom_dict.update({"face_verts": torchsdf.index_vertices_by_faces(v, f)})
+
                 self.mesh[link_name]["geoms"].append(geom_dict)
 
             # The total vertices and faces of this link. Seems only used for visualization.
@@ -510,15 +514,19 @@ class HandModel:
             x_in_geom = x_in_geom.reshape(-1, 3)  # (total_batch_size * num_samples, 3)
 
             if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
-                verts = geom["vertices"]
-                faces = geom["faces"]
                 face_verts = geom["face_verts"]
-
-                # SDF computation based on kaolin, instead of TorchSDF
-                dis_local, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_in_geom.unsqueeze(0), face_verts)
-                dis_signs = kaolin.ops.mesh.check_sign(verts, faces, x_in_geom.unsqueeze(0))  # True if inside mesh
-                dis_local = dis_local.squeeze(0)  # square distances
-                dis_signs = torch.where(dis_signs, -1.0, 1.0).squeeze(0)
+                
+                if self.sdf_tool == "kaolin":
+                    # SDF computation based on kaolin, instead of TorchSDF
+                    verts = geom["vertices"]
+                    faces = geom["faces"]
+                    dis_local, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_in_geom.unsqueeze(0), face_verts.unsqueeze(0))
+                    dis_signs = kaolin.ops.mesh.check_sign(verts.unsqueeze(0), faces, x_in_geom.unsqueeze(0))  # True if inside mesh
+                    dis_local = dis_local.squeeze(0)  # square distances
+                    dis_signs = torch.where(dis_signs, -1.0, 1.0).squeeze(0)
+                
+                elif self.sdf_tool == "torchsdf":
+                    dis_local, dis_signs, _, _ = torchsdf.compute_sdf(x_in_geom, face_verts)
 
                 # # DEBUG
                 # if link_name == "lh_thdistal":
@@ -755,6 +763,28 @@ class HandModel:
                         name=f"{names[j]}-axis",
                     )
                 )
+
+        return data
+    
+    def get_trimesh_data(self, i, rgba, pose=None, with_contact_points=False, with_axes=False):
+        if pose is not None:
+            pose = np.array(pose, dtype=np.float32)
+
+        data = []
+        for link_name in self.mesh:
+            v = self.current_status[link_name].transform_points(self.mesh[link_name]["vertices"])
+            if len(v.shape) == 3:
+                v = v[i]
+            v = v @ self.global_rotation[i].T + self.global_translation[i]
+            v = v.detach().cpu()
+            f = self.mesh[link_name]["faces"].detach().cpu()
+            if pose is not None:
+                v = v @ pose[:3, :3].T + pose[:3, 3]
+
+            mesh = tm.Trimesh(vertices=v, faces=f, process=False)
+            mesh.visual.vertex_colors = rgba
+
+            data.append(mesh)
 
         return data
 

@@ -1,0 +1,3 @@
+thres:
+  penetration: 0.01
+  self_penetration: 0.01

@@ -32,6 +32,43 @@ from utils.bimanual_handler import BimanualPair, save_grasp_results, EnergyTerms
 from utils.common import setup_device, set_random_seeds, ensure_directory
 
 
+def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
+    """Convert a Hydra DictConfig to ExperimentConfig dataclass."""
+    exp = ExperimentConfig()
+
+    # Top level simple fields
+    for key in ("name", "seed", "gpu"):
+        if key in cfg:
+            setattr(exp, key, cfg.get(key))
+
+    # Object code list (keep as python list)
+    if "object_code_list" in cfg:
+        if cfg.object_code_list:
+            exp.object_code_list = OmegaConf.to_object(cfg.object_code_list)
+        else:
+            with open(cfg.object_code_path, "r") as f:
+                exp.object_code_list = sorted(json.load(f))
+
+    # Helper to apply nested dict to dataclass-like object
+    def apply_section(section_name, target_obj):
+        if section_name in cfg:
+            sec = cfg.get(section_name)
+            for k, v in sec.items():
+                if hasattr(target_obj, k):
+                    # convert lists/dicts to native Python
+                    val = OmegaConf.to_object(v) if isinstance(v, (dict, list)) else v
+                    setattr(target_obj, k, val)
+
+    apply_section("hand_params", exp.hand)
+    apply_section("paths", exp.paths)
+    apply_section("energy", exp.energy)
+    apply_section("optimizer", exp.optimizer)
+    apply_section("initialization", exp.initialization)
+    apply_section("model", exp.model)
+
+    return exp
+
+
 # --- Utility to build hand pose tensor ---
 def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
     """Build a torch tensor for hand pose given qpos dict."""
@@ -49,14 +86,17 @@ class GraspExperiment:
     Main experiment class for bimanual grasp generation.
     """
 
-    def __init__(self, config: ExperimentConfig):
-        self.config = config
+    def __init__(self, cfg: DictConfig):
+        self.cfg: DictConfig = cfg # hydra
         self.device = None
         self.bimanual_pair = None
         self.object_model = None
         self.optimizer = None
         self.energy_computer = None
         self.logger = None
+
+        # Convert to ExperimentConfig dataclass
+        self.config: ExperimentConfig = experiment_config_from_dict(cfg)
 
         # Profiling
         self.profiler = cProfile.Profile()
@@ -162,6 +202,9 @@ class GraspExperiment:
 
         batched_object_code_list = split_by_max_size(all_object_code_list, max_object_per_batch)
 
+        n_valid = 0
+        n_all = 0
+
         # Process the objects in batch
         for i_batch, object_code_list in enumerate(batched_object_code_list):
             self.object_model.initialize(object_code_list)
@@ -171,9 +214,11 @@ class GraspExperiment:
             left_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 
                                             9 + len(left_joint_names)), device=self.device)
 
+            data_dict_lst_all_obj = []
             for i_obj, object_code in enumerate(object_code_list):
                 # load synthesized grasps
                 data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)
+                data_dict_lst_all_obj.append(data_dict_lst)
 
                 for i_grasp, data_dict in enumerate(data_dict_lst):
                     right_qpos = data_dict["qpos_right"]
@@ -197,18 +242,41 @@ class GraspExperiment:
 
             energy_terms = self.energy_computer.compute_all_energies(self.bimanual_pair, self.object_model, verbose=True)
 
-            
-            obj_idx = 0
-            grasp_idx = 0
-            print(f"obj_name: {object_code_list[obj_idx]}, grasp_idx: {grasp_idx}")
+            # DEBUG check
+            # obj_idx = 0
+            # grasp_idx = 1
+            # print(f"obj_name: {object_code_list[obj_idx]}, grasp_idx: {grasp_idx}")
 
-            keys = ["total", "force_closure", "distance", "penetration", "self_penetration", "joint_limits", "wrench_volume"]
-            for key in keys:
-                val = getattr(energy_terms, key).clone()
-                val = val.reshape(n_obj, n_samples_per_obj)
-                print(f"{key}: {val[obj_idx, grasp_idx]}")
+            # keys = ["total", "force_closure", "distance", "penetration", "self_penetration", "joint_limits", "wrench_volume"]
+            # for key in keys:
+            #     val = getattr(energy_terms, key).clone()
+            #     val = val.reshape(n_obj, n_samples_per_obj)
+            #     print(f"{key}: {val[obj_idx, grasp_idx]}")
+            # a = 1
 
-            a = 1
+            # Filtering
+            thres_pen = self.cfg.task.thres.penetration
+            thres_spen = self.cfg.task.thres.self_penetration
+            valid = (energy_terms.penetration < thres_pen) & (energy_terms.self_penetration < thres_spen)
+            valid = valid.reshape(n_obj, n_samples_per_obj)
+
+            n_valid += valid.sum().item()
+            n_all += valid.numel()
+
+            # Saving
+            save_dir = os.path.join(exp_path, "filtered")
+            for i_obj, object_code in enumerate(object_code_list):
+                for i_grasp in range(len(data_dict_lst)):
+                    if valid[i_obj, i_grasp]:
+                        save_path = os.path.join(save_dir, object_code, f"grasp_{i_grasp}.npy")
+                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                        np.save(save_path, data_dict_lst_all_obj[i_obj][i_grasp])
+                        logging.info(f"Save filtered grasp data to {save_path}.")
+
+        logging.info(f"===============================================")
+        logging.info(f"Passed grasp ratio (all): {n_valid / n_all}.")
+        logging.info(f"===============================================")
+
 
     def run_full_experiment(self, object_code_list: List[str]):
         """Run the complete experiment pipeline."""
@@ -223,44 +291,6 @@ class GraspExperiment:
         self.run_filter(object_code_list)
 
 
-def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
-    """Convert a Hydra DictConfig to ExperimentConfig dataclass."""
-    exp = ExperimentConfig()
-
-    # Top level simple fields
-    for key in ("name", "seed", "gpu"):
-        if key in cfg:
-            setattr(exp, key, cfg.get(key))
-
-    # Object code list (keep as python list)
-    if "object_code_list" in cfg:
-        if cfg.object_code_list:
-            exp.object_code_list = OmegaConf.to_object(cfg.object_code_list)
-        else:
-            with open(cfg.object_code_path, "r") as f:
-                exp.object_code_list = sorted(json.load(f))
-
-    # Helper to apply nested dict to dataclass-like object
-    def apply_section(section_name, target_obj):
-        if section_name in cfg:
-            sec = cfg.get(section_name)
-            for k, v in sec.items():
-                if hasattr(target_obj, k):
-                    # convert lists/dicts to native Python
-                    val = OmegaConf.to_object(v) if isinstance(v, (dict, list)) else v
-                    setattr(target_obj, k, val)
-
-    apply_section("hand_params", exp.hand)
-    apply_section("paths", exp.paths)
-    apply_section("energy", exp.energy)
-    apply_section("optimizer", exp.optimizer)
-    apply_section("initialization", exp.initialization)
-    apply_section("model", exp.model)
-
-    return exp
-
-
-
 def task_filter(cfg: DictConfig):
 
     # merge cfg.hand.paths into cfg.paths
@@ -268,11 +298,15 @@ def task_filter(cfg: DictConfig):
     cfg.hand_params = OmegaConf.merge(cfg.hand_params, cfg.hand.hand_params)
     cfg.initialization = OmegaConf.merge(cfg.initialization, cfg.hand.initialization)
 
-    # Convert to ExperimentConfig dataclass
-    config = experiment_config_from_dict(cfg)
+    # Object code list (keep as python list)
+    if "object_code_list" in cfg:
+        if cfg.object_code_list:
+            object_code_list = OmegaConf.to_object(cfg.object_code_list)
+        else:
+            with open(cfg.object_code_path, "r") as f:
+                object_code_list = sorted(json.load(f))
 
-    experiment = GraspExperiment(config)
-
-    experiment.run_full_experiment(config.object_code_list)
+    experiment = GraspExperiment(cfg)
+    experiment.run_full_experiment(object_code_list)
 
     return

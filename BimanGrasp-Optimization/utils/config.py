@@ -156,6 +156,8 @@ class ModelConfig:
     # batch_size_each: int = 5  # Batch size per object for large-scale
     max_total_batch_size: int = 100  # Maximum total batch size for multi-GPU
 
+    sdf_tool: str = None
+
 
 @dataclass
 class ExperimentConfig:

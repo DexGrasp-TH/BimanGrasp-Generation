@@ -11,7 +11,11 @@ import pytorch3d.structures
 import pytorch3d.ops
 import plotly.graph_objects as go
 
-from torchsdf import index_vertices_by_faces, compute_sdf
+# from torchsdf import index_vertices_by_faces, compute_sdf
+# import kaolin
+# from kaolin.ops.mesh import index_vertices_by_faces, face_normals
+import kaolin
+import torchsdf
 
 
 class ObjectModel:
@@ -28,6 +32,7 @@ class ObjectModel:
         device: str = "cuda",
         size: str = None,
         bodex_format: bool = True,
+        sdf_tool = "torchsdf",
     ):
         """
         Initialize object model.
@@ -45,6 +50,7 @@ class ObjectModel:
         self.data_root_path = data_root_path
         self.num_samples = num_samples
         self.bodex_format = bodex_format
+        self.sdf_tool = sdf_tool
 
         # Model state
         self.object_code_list = None
@@ -81,7 +87,12 @@ class ObjectModel:
         self.object_code_list = object_code_list
         self.object_scale_tensor = []
         self.object_mesh_list = []
+
+        self.object_vertices_list = []
+        self.object_faces_list = []
         self.object_face_verts_list = []
+        self.object_face_normals_list = []
+
         self.surface_points_tensor = []
 
         dense_point_cloud = None
@@ -101,7 +112,18 @@ class ObjectModel:
             # Prepare mesh data for SDF computation
             object_verts = torch.tensor(mesh.vertices, dtype=torch.float, device=self.device)
             object_faces = torch.tensor(mesh.faces, dtype=torch.long, device=self.device)
-            self.object_face_verts_list.append(index_vertices_by_faces(object_verts, object_faces))
+            
+            if self.sdf_tool == "kaolin":
+                object_face_verts = kaolin.ops.mesh.index_vertices_by_faces(object_verts.unsqueeze(0), object_faces)
+                object_face_normals = kaolin.ops.mesh.face_normals(object_face_verts, unit=True)
+                self.object_vertices_list.append(object_verts)
+                self.object_faces_list.append(object_faces)
+                self.object_face_verts_list.append(object_face_verts.squeeze(0))
+                self.object_face_normals_list.append(object_face_normals.squeeze(0))
+
+            elif self.sdf_tool == "torchsdf":
+                object_face_verts = torchsdf.index_vertices_by_faces(object_verts, object_faces)
+                self.object_face_verts_list.append(object_face_verts)
 
             # Sample surface points if requested
             if self.num_samples > 0:
@@ -148,10 +170,24 @@ class ObjectModel:
         # Compute SDF for each object
         for i in range(len(self.object_mesh_list)):
             face_verts = self.object_face_verts_list[i]
-            dis_squared, dis_signs, normal, _ = compute_sdf(x_scaled[i], face_verts)
+            if self.sdf_tool == "kaolin":
+                # use kaolin instead of torchSDF
+                verts = self.object_vertices_list[i]
+                faces = self.object_faces_list[i]
+                face_normals = self.object_face_normals_list[i]
+
+                dis_squared, face_indices, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_scaled[i].unsqueeze(0), face_verts.unsqueeze(0))
+                dis_squared = dis_squared.squeeze(0)  # square distances
+                dis_signs = kaolin.ops.mesh.check_sign(verts.unsqueeze(0), faces, x_scaled[i].unsqueeze(0))  # True if inside mesh
+                dis_signs = torch.where(dis_signs, -1.0, 1.0).squeeze(0)
+                normal = face_normals[face_indices]
+
+            elif self.sdf_tool == "torchsdf":
+                dis_squared, dis_signs, normal, _ = torchsdf.compute_sdf(x_scaled[i], face_verts)
 
             if with_closest_points:
                 closest_points.append(x_scaled[i] - torch.sqrt(dis_squared).unsqueeze(1) * normal)
+                raise NotImplementedError("The current implementation is not accurate.")
 
             # Convert to signed distance
             dis = torch.sqrt(dis_squared + 1e-8)

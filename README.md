@@ -15,7 +15,7 @@ You can install everything step by step.
 2. **Install PyTorch (CUDA 12 support)**
 
    ```bash
-   conda install pytorch==2.2.2 pytorch-cuda=12.1 -c pytorch -c nvidia 
+   conda install pytorch==2.1.0 pytorch-cuda=12.1 -c pytorch -c nvidia 
    ```
 
 3. **Install PyTorch3D**
@@ -31,6 +31,11 @@ You can install everything step by step.
    pip install urdf_parser_py scipy networkx tensorboard six omegaconf hydra-core 
    pip install mujoco
    pip install 'pyglet<2'
+
+   pip install kaolin==0.15.0 -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.1.0_cu121.html
+
+   # use blender to smooth hand mesh
+   pip install bpy
    ```
 
 5. **Build and install TorchSDF**

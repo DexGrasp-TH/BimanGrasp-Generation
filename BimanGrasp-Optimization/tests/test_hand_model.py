@@ -8,7 +8,6 @@ from scipy.spatial.transform import Rotation as sciR
 import mujoco
 import numpy as np
 import json
-from torchsdf import index_vertices_by_faces, compute_sdf
 import pytorch3d.structures
 import pytorch3d.ops
 import plotly.graph_objects as go

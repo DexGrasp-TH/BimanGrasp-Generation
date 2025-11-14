@@ -78,3 +78,5 @@ model:
   batch_size: 128 # 128
   max_total_batch_size: 1024
   multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
+  hand_sdf_tool: "kaolin"
+  object_sdf_tool: "kaolin"
