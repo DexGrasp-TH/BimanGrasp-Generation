@@ -61,8 +61,8 @@ set_seed(42)
 
 def test():
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow2/left_hand.xml"
-    contact_points_path = "mjcf/shadow2/left_hand_contact_points.json"
+    mjcf_path = "mjcf/shadow2/right_hand.xml"
+    contact_points_path = "mjcf/shadow2/right_hand_contact_points.json"
     penetration_points_path = None
     device = "cuda:0"
 
@@ -72,7 +72,7 @@ def test():
         penetration_points_path=penetration_points_path,
         n_surface_points=2000,
         device=device,
-        handedness="left_hand",
+        handedness=None,
     )
 
     hand_pos = torch.zeros((3,), device=device)
@@ -221,6 +221,6 @@ if __name__ == "__main__":
         datefmt="%Y-%m-%d %H:%M:%S",  # 时间格式
     )
 
-    # test()
-    test_cal_distance()
+    test()
+    # test_cal_distance()
     # test_self_penetration()
