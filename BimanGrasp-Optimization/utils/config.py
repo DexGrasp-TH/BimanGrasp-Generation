@@ -65,6 +65,8 @@ class EnergyConfig:
     thres_dis: float = 0.005  # Distance threshold
     thres_pen: float = 0.001  # Penetration threshold
 
+    pen_points: str = "object"
+
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary for energy function calls."""
         return {

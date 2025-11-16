@@ -28,7 +28,7 @@ You can install everything step by step.
 
    ```bash
    conda install -c conda-forge transforms3d trimesh kaleido imageio plotly rtree -y
-   pip install urdf_parser_py scipy networkx tensorboard six omegaconf hydra-core 
+   pip install urdf_parser_py scipy networkx tensorboard six omegaconf hydra-core pyrender
    pip install mujoco
    pip install 'pyglet<2'
 

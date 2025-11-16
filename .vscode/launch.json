@@ -8,7 +8,7 @@
       "program": "${file}",
       "cwd": "${workspaceFolder}/BimanGrasp-Optimization",
       "console": "integratedTerminal",
-      "args": ["task=filter", "name=server_9", "gpu=1"]
+      "args": ["task=vis_single_grasp", "name=server_9", "gpu=0"]
     }
   ]
 }

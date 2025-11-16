@@ -18,8 +18,8 @@ import open3d as o3d
 import numpy as np
 
 # hyper-parameters
-meshpath = "mjcf/shadow2/assets/f_distal_pst_cut4.obj"
-proc_meshpath = "mjcf/shadow2/assets/f_distal_pst_cut_sm.obj"
+meshpath = "mjcf/shadow2/assets/th_distal_pst_cut2.obj"
+proc_meshpath = "mjcf/shadow2/assets/th_distal_pst_cut_sm.obj"
 target_faces = 500  # final mesh
 
 mesh = trimesh.load(meshpath)

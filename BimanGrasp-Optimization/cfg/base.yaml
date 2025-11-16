@@ -47,6 +47,7 @@ energy:
   thres_fc: 0.45
   thres_dis: 0.005
   thres_pen: 0.001
+  pen_points: "hand" # 'object' / 'hand': points of <which> to mesh for H-O penetration calculation
 
 optimizer:
   switch_possibility: 0.5

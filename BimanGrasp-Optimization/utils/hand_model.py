@@ -683,6 +683,12 @@ class HandModel:
 
         return points
 
+    def get_global_surface_points(self):
+        """
+        Get surface points in global frame.
+        """
+        return self.surface_point.clone()
+
     def get_contact_candidates(self):
         """
         Get all contact candidates

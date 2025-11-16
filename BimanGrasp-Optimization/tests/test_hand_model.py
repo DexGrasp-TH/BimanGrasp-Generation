@@ -101,8 +101,8 @@ def test():
 
 def test_cal_distance():
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow2/right_hand.xml"
-    contact_points_path = "mjcf/shadow2/right_hand_contact_points.json"
+    mjcf_path = "mjcf/shadow2/left_hand.xml"
+    contact_points_path = "mjcf/shadow2/left_hand_contact_points.json"
     penetration_points_path = None
     device = "cuda:0"
 
@@ -112,7 +112,7 @@ def test_cal_distance():
         penetration_points_path=penetration_points_path,
         n_surface_points=2000,
         device=device,
-        handedness="right_hand",
+        handedness=None,
     )
 
     # hand_pos = torch.zeros((3,), device=device)
@@ -121,10 +121,10 @@ def test_cal_distance():
     # hand_pose = torch.cat([hand_pos, hand_rot, hand_q]).reshape(1, -1)
 
     # load hand pose
-    grasp_data_path = "../data/experiments/server_3/results/ddg_gd_box_poisson_005.npy"
-    grasp_idx = 0
+    grasp_data_path = "../data/experiments/server_9/results/ddg_gd_box_poisson_005.npy"
+    grasp_idx = 2
     data_dict = np.load(grasp_data_path, allow_pickle=True)[grasp_idx]
-    qpos = data_dict["qpos_right"]
+    qpos = data_dict["qpos_left"]
     joint_names = hand_model.get_joint_names()
     hand_pose = build_hand_pose(qpos, TRANSLATION_NAMES, ROTATION_NAMES, joint_names, device).reshape(1, -1)
 
@@ -132,7 +132,7 @@ def test_cal_distance():
 
     hand_model.set_parameters(hand_pose, contact_point_indices)
 
-    xp = torch.tensor([-0.0138,  0.0385, -0.1159]).float().to(device).reshape(1, -1, 3)
+    xp = torch.tensor([0.0460, -0.0011, -0.1312]).float().to(device).reshape(1, -1, 3)
     xp = xp.repeat(3, 2, 1)  # (B, N, 3)
     dis = hand_model.cal_distance(xp)
     print(f"dis: {dis}.")
