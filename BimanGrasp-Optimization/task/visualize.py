@@ -250,6 +250,9 @@ def save_grasp_images(params):
     obj_scale_lst = []
     grasp_id_lst = []
 
+    if not os.path.exists(file_path):
+        logging.warning(f"File {file_path} does not exist.")
+
     data_dict_lst = np.load(file_path, allow_pickle=True)
     for grasp_idx in grasp_idx_lst:
         data_dict = data_dict_lst[grasp_idx]

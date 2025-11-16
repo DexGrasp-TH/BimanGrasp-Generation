@@ -179,7 +179,7 @@ class PenetrationComputer:
         Hand surface points to object mesh.
         """
         left_hand_surface_points = bimanual_pair.left.get_global_surface_points()
-        right_hand_surface_points = bimanual_pair.left.get_global_surface_points()
+        right_hand_surface_points = bimanual_pair.right.get_global_surface_points()
         hand_surface_points = torch.cat([left_hand_surface_points, right_hand_surface_points], dim=1)  # (B, N, 3)
         distances, _ = object_model.cal_distance(hand_surface_points)
         distances = torch.clamp(distances, min=0)

@@ -29,9 +29,10 @@ def main(cfg: DictConfig):
     the Hydra-decorated entrypoint.
     """
 
-    commands = ["python main_batch.py name=server_8 gpu=0 optimizer.mean_ema_grad_weight=1.0",
-                "python main_batch.py name=server_9 gpu=1 optimizer.mean_ema_grad_weight=0.5",
-                "python main_batch.py name=server_10 gpu=2 optimizer.mean_ema_grad_weight=0.0",]
+    commands = ["python main_batch.py name=server_20 gpu=0 optimizer.mean_ema_grad_weight=1.0 optimizer.joint_limit_clamp=False",
+                "python main_batch.py name=server_21 gpu=1 optimizer.mean_ema_grad_weight=0.5 optimizer.joint_limit_clamp=False",
+                "python main_batch.py name=server_22 gpu=2 optimizer.mean_ema_grad_weight=0.0 optimizer.joint_limit_clamp=False",
+                ]
     
     multi_gpu_cfg_path = os.path.join(cfg.paths.experiments_base, cfg.name, "multi_gpu")
     os.makedirs(multi_gpu_cfg_path, exist_ok=True)

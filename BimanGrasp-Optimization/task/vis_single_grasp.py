@@ -191,102 +191,126 @@ class GraspExperiment:
 
         object_code_list = self.cfg.task.object_code_list
         grasp_indices = self.cfg.task.grasp_indices
+        opt_steps = self.cfg.task.opt_steps
 
         for object_code in object_code_list:
             for grasp_idx in grasp_indices:
-                self.object_model.initialize([object_code])
+                for opt_step in opt_steps:
+                    self.object_model.initialize([object_code])
 
-                # load synthesized grasps
-                data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)
-                data_dict = data_dict_lst[grasp_idx]
+                    # Load synthesized grasps
+                    if opt_step == -1:  # final result
+                        data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)
+                    else:  # specific opt step
+                        data_dict_lst = np.load(
+                            os.path.join(result_path, f"intermediate/{object_code}_{opt_step}.npy"), allow_pickle=True
+                        )
+                    data_dict = data_dict_lst[grasp_idx]
 
-                right_qpos = data_dict["qpos_right"]
-                left_qpos = data_dict["qpos_left"]
-                obj_scale = data_dict["scale"]
+                    right_qpos = data_dict["qpos_right"]
+                    left_qpos = data_dict["qpos_left"]
+                    right_contact_point_indices = data_dict["contact_point_indices_right"]
+                    left_contact_point_indices = data_dict["contact_point_indices_left"]
+                    obj_scale = data_dict["scale"]
 
-                # set object scale
-                self.object_model.object_scale_tensor[0] = obj_scale
+                    right_hand_pose = build_hand_pose(
+                        right_qpos, TRANSLATION_NAMES, ROTATION_NAMES, right_joint_names, self.device
+                    ).unsqueeze(0)
+                    left_hand_pose = build_hand_pose(
+                        left_qpos, TRANSLATION_NAMES, ROTATION_NAMES, left_joint_names, self.device
+                    ).unsqueeze(0)
+                    right_contact_point_indices = torch.tensor(
+                        right_contact_point_indices, device=self.device
+                    ).unsqueeze(0)
+                    left_contact_point_indices = torch.tensor(left_contact_point_indices, device=self.device).unsqueeze(
+                        0
+                    )
 
-                right_hand_pose = build_hand_pose(
-                    right_qpos, TRANSLATION_NAMES, ROTATION_NAMES, right_joint_names, self.device
-                )
-                left_hand_pose = build_hand_pose(
-                    left_qpos, TRANSLATION_NAMES, ROTATION_NAMES, left_joint_names, self.device
-                )
+                    # Set object scale
+                    self.object_model.object_scale_tensor[0] = obj_scale
 
-                self.bimanual_pair.right.set_parameters(right_hand_pose.unsqueeze(0))  # batch size = 1
-                self.bimanual_pair.left.set_parameters(left_hand_pose.unsqueeze(0))
+                    # Set hand qpos & contact points (batch size = 1)
+                    self.bimanual_pair.right.set_parameters(right_hand_pose, right_contact_point_indices)
+                    self.bimanual_pair.left.set_parameters(left_hand_pose, left_contact_point_indices)
 
-                energy_terms = self.energy_computer.compute_all_energies(
-                    self.bimanual_pair, self.object_model, verbose=True
-                )
+                    energy_terms = self.energy_computer.compute_all_energies(
+                        self.bimanual_pair, self.object_model, verbose=True
+                    )
 
-                keys = [
-                    "total",
-                    "force_closure",
-                    "distance",
-                    "penetration",
-                    "self_penetration",
-                    "joint_limits",
-                    "wrench_volume",
-                ]
-                print(f"======== Energy of {object_code}:grasp_{grasp_idx} ========")
-                for key in keys:
-                    val = getattr(energy_terms, key).clone()
-                    print(f"{key}: {val}")
+                    keys = [
+                        "total",
+                        "force_closure",
+                        "distance",
+                        "penetration",
+                        "self_penetration",
+                        "joint_limits",
+                        "wrench_volume",
+                    ]
+                    print(f"======== Energy of {object_code}:grasp_{grasp_idx} ========")
+                    for key in keys:
+                        val = getattr(energy_terms, key).clone()
+                        print(f"{key}: {val}")
 
-                # --- Visualization ---
-                # Final poses (solid colors)
-                right_plot = self.bimanual_pair.right.get_plotly_data(
-                    i=0, opacity=1.0, color="lightslategray", with_contact_points=False
-                )
-                left_plot = self.bimanual_pair.left.get_plotly_data(
-                    i=0, opacity=1.0, color="lightslategray", with_contact_points=False
-                )
-                object_plot = self.object_model.get_plotly_data(i=0, color="seashell", opacity=1.0)
+                    # --- Visualization ---
+                    # Final poses (solid colors)
+                    right_plot = self.bimanual_pair.right.get_plotly_data(
+                        i=0, opacity=1.0, color="lightslategray", with_contact_points=True
+                    )
+                    left_plot = self.bimanual_pair.left.get_plotly_data(
+                        i=0, opacity=1.0, color="lightslategray", with_contact_points=True
+                    )
+                    object_plot = self.object_model.get_plotly_data(i=0, color="seashell", opacity=1.0)
 
-                # object surface points
-                obj_surface_points = (
-                    self.object_model.object_scale_tensor[0] * self.object_model.surface_points_tensor[0]
-                )
-                obj_surface_points = obj_surface_points.cpu().detach().numpy()
-                obj_surface_points_plot = go.Scatter3d(
-                    x=obj_surface_points[:, 0],
-                    y=obj_surface_points[:, 1],
-                    z=obj_surface_points[:, 2],
-                    mode="markers",
-                    marker=dict(color="blue", size=5),
-                )
+                    # object surface points
+                    obj_surface_points = (
+                        self.object_model.object_scale_tensor[0] * self.object_model.surface_points_tensor[0]
+                    )
+                    obj_surface_points = obj_surface_points.cpu().detach().numpy()
+                    obj_surface_points_plot = go.Scatter3d(
+                        x=obj_surface_points[:, 0],
+                        y=obj_surface_points[:, 1],
+                        z=obj_surface_points[:, 2],
+                        mode="markers",
+                        marker=dict(color="blue", size=2),
+                    )
 
-                # hand surface poitns
-                hand_surface_points_right = self.bimanual_pair.right.get_global_surface_points()
-                hand_surface_points_left = self.bimanual_pair.left.get_global_surface_points()
-                hand_surface_points = torch.cat([hand_surface_points_right, hand_surface_points_left], dim=1)
-                hand_surface_points = hand_surface_points[0].cpu().detach().numpy()
-                hand_surface_points_plot = go.Scatter3d(
-                    x=hand_surface_points[:, 0],
-                    y=hand_surface_points[:, 1],
-                    z=hand_surface_points[:, 2],
-                    mode="markers",
-                    marker=dict(color="red", size=5),
-                )
+                    # hand surface poitns
+                    hand_surface_points_right = self.bimanual_pair.right.get_global_surface_points()
+                    hand_surface_points_left = self.bimanual_pair.left.get_global_surface_points()
+                    hand_surface_points = torch.cat([hand_surface_points_right, hand_surface_points_left], dim=1)
+                    hand_surface_points = hand_surface_points[0].cpu().detach().numpy()
+                    hand_surface_points_plot = go.Scatter3d(
+                        x=hand_surface_points[:, 0],
+                        y=hand_surface_points[:, 1],
+                        z=hand_surface_points[:, 2],
+                        mode="markers",
+                        marker=dict(color="lightpink", size=2),
+                    )
 
-                # Combine everything
-                plot_lst = right_plot + left_plot + object_plot + [obj_surface_points_plot, hand_surface_points_plot]
-                fig = go.Figure(plot_lst)
+                    # Combine everything
+                    plot_lst = (
+                        right_plot + left_plot + object_plot + [obj_surface_points_plot, hand_surface_points_plot]
+                    )
+                    fig = go.Figure(plot_lst)
 
-                fig.update_layout(
-                    paper_bgcolor="#E2F0D9",
-                    plot_bgcolor="#E2F0D9",
-                    scene_aspectmode="data",
-                    scene=dict(
-                        xaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
-                        yaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
-                        zaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
-                    ),
-                )
+                    fig.update_layout(
+                        paper_bgcolor="#E2F0D9",
+                        plot_bgcolor="#E2F0D9",
+                        scene_aspectmode="data",
+                        scene=dict(
+                            xaxis=dict(
+                                visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False
+                            ),
+                            yaxis=dict(
+                                visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False
+                            ),
+                            zaxis=dict(
+                                visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False
+                            ),
+                        ),
+                    )
 
-                fig.show()
+                    fig.show()
 
     def run_full_experiment(self):
         """Run the complete experiment pipeline."""

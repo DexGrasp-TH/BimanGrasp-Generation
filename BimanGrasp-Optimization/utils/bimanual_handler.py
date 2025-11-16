@@ -83,8 +83,10 @@ class GraspData:
     scale: float
     qpos_left: Dict[str, float]
     qpos_left_st: Dict[str, float]  # Starting pose
+    contact_point_indices_left: List[int]
     qpos_right: Dict[str, float]
     qpos_right_st: Dict[str, float]  # Starting pose
+    contact_point_indices_right: List[int]
     energy: float
     E_fc: float
     E_dis: float
@@ -98,8 +100,10 @@ class GraspData:
             "scale": self.scale,
             "qpos_left": self.qpos_left,
             "qpos_left_st": self.qpos_left_st,
+            "contact_point_indices_left": self.contact_point_indices_left,
             "qpos_right": self.qpos_right,
             "qpos_right_st": self.qpos_right_st,
+            "contact_point_indices_right": self.contact_point_indices_right,
             "energy": self.energy,
             "E_fc": self.E_fc,
             "E_dis": self.E_dis,
@@ -334,12 +338,17 @@ def create_grasp_data(
     qpos_right = hand_pose_to_dict(right_hand_model.hand_pose[idx], r_joint_names)
     qpos_right_st = hand_pose_to_dict(right_hand_pose_st[idx], r_joint_names)
 
+    contact_point_indices_left = left_hand_model.contact_point_indices[idx].cpu().numpy().tolist()
+    contact_point_indices_right = right_hand_model.contact_point_indices[idx].cpu().numpy().tolist()
+
     return GraspData(
         scale=scale,
         qpos_left=qpos_left,
         qpos_left_st=qpos_left_st,
+        contact_point_indices_left=contact_point_indices_left,
         qpos_right=qpos_right,
         qpos_right_st=qpos_right_st,
+        contact_point_indices_right=contact_point_indices_right,
         energy=energy_terms.total[idx].item(),
         E_fc=energy_terms.force_closure[idx].item(),
         E_dis=energy_terms.distance[idx].item(),

@@ -215,7 +215,7 @@ class GraspExperiment:
                     show=False,
                 )
 
-                if (step + 1) % 100 == 0:  # DEBUG
+                if (step + 1) % 10 == 0:  # DEBUG
                     self.save_intermediate_results(step=step + 1, energy_terms=energy_terms)
 
         self.profiler.disable()
