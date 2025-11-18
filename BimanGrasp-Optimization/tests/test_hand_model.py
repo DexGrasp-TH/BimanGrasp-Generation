@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 import logging
 import random
 import transforms3d
+from omegaconf import OmegaConf
 
 # 添加上级目录到 sys.path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -60,6 +61,8 @@ set_seed(42)
 
 
 def test():
+    cfg = OmegaConf.load("cfg/hand/shadow2.yaml")
+
     # building the robot from a MJCF file
     mjcf_path = "mjcf/shadow2/right_hand.xml"
     contact_points_path = "mjcf/shadow2/right_hand_contact_points.json"
@@ -72,7 +75,8 @@ def test():
         penetration_points_path=penetration_points_path,
         n_surface_points=2000,
         device=device,
-        handedness=None,
+        handedness="right_hand",
+        cfg=cfg.hand_params,
     )
 
     hand_pos = torch.zeros((3,), device=device)

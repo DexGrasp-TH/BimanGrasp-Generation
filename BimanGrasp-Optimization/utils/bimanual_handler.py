@@ -222,42 +222,83 @@ class BimanualPair:
         if self.right.hand_pose.grad is not None:
             self.right.hand_pose.grad.data.zero_()
 
-    def compute_joint_limits_energy(self) -> torch.Tensor:
+    def compute_joint_limits_violation(self):
+        """
+        Return the max violated joint angle.
+        """
+
+        def single_hand_joint_violation(hand_model):
+            upper_violations = (hand_model.hand_pose[:, 9:] > hand_model.joints_upper) * (
+                hand_model.hand_pose[:, 9:] - hand_model.joints_upper
+            )
+            lower_violations = (hand_model.hand_pose[:, 9:] < hand_model.joints_lower) * (
+                hand_model.joints_lower - hand_model.hand_pose[:, 9:]
+            )
+            return torch.cat([upper_violations, lower_violations], dim=-1).max(dim=-1, keepdim=True)[0]
+
+        left, right = self.apply_to_both(single_hand_joint_violation)
+        return torch.cat([left, right], dim=-1).max(dim=-1)[0]
+
+    def compute_joint_limits_energy(self, cfg) -> torch.Tensor:
         """Compute joint limits energy for both hands."""
 
         def single_hand_joint_energy(hand_model):
-            upper_violations = torch.sum(
-                (hand_model.hand_pose[:, 9:] > hand_model.joints_upper)
-                * (hand_model.hand_pose[:, 9:] - hand_model.joints_upper),
-                dim=-1,
-            )
-            lower_violations = torch.sum(
-                (hand_model.hand_pose[:, 9:] < hand_model.joints_lower)
-                * (hand_model.joints_lower - hand_model.hand_pose[:, 9:]),
-                dim=-1,
-            )
-            return upper_violations + lower_violations
+            if cfg.joint_limit_func == "quadratic":
+                upper_violations = torch.sum(
+                    (hand_model.hand_pose[:, 9:] > hand_model.joints_upper)
+                    * (hand_model.hand_pose[:, 9:] - hand_model.joints_upper),
+                    dim=-1,
+                )
+                lower_violations = torch.sum(
+                    (hand_model.hand_pose[:, 9:] < hand_model.joints_lower)
+                    * (hand_model.joints_lower - hand_model.hand_pose[:, 9:]),
+                    dim=-1,
+                )
+                return upper_violations + lower_violations
+
+            elif cfg.joint_limit_func == "soft_quadratic":
+                margin = cfg.joint_limit_margin
+                # Extract joint angles
+                q = hand_model.hand_pose[:, 9:]
+                # Joint limits
+                q_min = hand_model.joints_lower
+                q_max = hand_model.joints_upper
+                # Define soft inner limits
+                soft_min = q_min + margin * (q_max - q_min)
+                soft_max = q_max - margin * (q_max - q_min)
+                # --- Penalty for exceeding limits ---
+                over = (q - q_max).clamp(min=0)
+                under = (q_min - q).clamp(min=0)
+                # --- Penalty inside soft margin (smooth approaching limits) ---
+                near_upper = ((q - soft_max).clamp(min=0)) ** 2
+                near_lower = ((soft_min - q).clamp(min=0)) ** 2
+                # Combine
+                energy = over**2 + under**2 + near_upper + near_lower
+                return torch.sum(energy, dim=-1)
+
+            else:
+                raise ValueError(f"Unsupported joint limit func: {cfg.joint_limit_func}.")
 
         left_energy, right_energy = self.apply_to_both(single_hand_joint_energy)
         return left_energy + right_energy
 
-    def compute_self_penetration_energy(self) -> torch.Tensor:
-        """Compute self-penetration energy for both hands."""
-        left_spen, right_spen = self.apply_to_both(lambda h: h.self_penetration())
-        return left_spen + right_spen
+    # def compute_self_penetration_energy(self) -> torch.Tensor:
+    #     """Compute self-penetration energy for both hands."""
+    #     left_spen, right_spen = self.apply_to_both(lambda h: h.self_penetration())
+    #     return left_spen + right_spen
 
-    def compute_object_penetration_energy(self, object_model) -> torch.Tensor:
-        """Compute hand-object penetration energy."""
-        object_scale = object_model.object_scale_tensor.flatten().unsqueeze(1).unsqueeze(2)
-        object_surface_points = object_model.surface_points_tensor * object_scale
+    # def compute_object_penetration_energy(self, object_model) -> torch.Tensor:
+    #     """Compute hand-object penetration energy."""
+    #     object_scale = object_model.object_scale_tensor.flatten().unsqueeze(1).unsqueeze(2)
+    #     object_surface_points = object_model.surface_points_tensor * object_scale
 
-        def compute_penetration(hand_model):
-            distances = hand_model.cal_distance(object_surface_points)
-            distances = torch.clamp(distances, min=0)  # Only positive penetrations
-            return distances.sum(-1)
+    #     def compute_penetration(hand_model):
+    #         distances = hand_model.cal_distance(object_surface_points)
+    #         distances = torch.clamp(distances, min=0)  # Only positive penetrations
+    #         return distances.sum(-1)
 
-        left_pen, right_pen = self.apply_to_both(compute_penetration)
-        return left_pen + right_pen
+    #     left_pen, right_pen = self.apply_to_both(compute_penetration)
+    #     return left_pen + right_pen
 
     @property
     def batch_size(self) -> int:

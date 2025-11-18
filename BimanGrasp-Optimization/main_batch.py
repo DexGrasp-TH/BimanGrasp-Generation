@@ -79,6 +79,7 @@ class GraspExperiment:
             device=self.device,
             n_surface_points=self.config.model.n_surface_points,
             handedness="right_hand",
+            cfg=self.config.hand_params,
         )
         left_hand_model = HandModel(
             mjcf_path=self.config.paths.left_hand_mjcf,
@@ -87,6 +88,7 @@ class GraspExperiment:
             device=self.device,
             n_surface_points=self.config.model.n_surface_points,
             handedness="left_hand",
+            cfg=self.config.hand_params,
         )
 
         # Create object model
@@ -215,7 +217,7 @@ class GraspExperiment:
                     show=False,
                 )
 
-                if (step + 1) % 10 == 0:  # DEBUG
+                if (step + 1) % self.config.model.intermediate_save_step == 0:
                     self.save_intermediate_results(step=step + 1, energy_terms=energy_terms)
 
         self.profiler.disable()
@@ -323,7 +325,7 @@ def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
                     val = OmegaConf.to_object(v) if isinstance(v, (dict, list)) else v
                     setattr(target_obj, k, val)
 
-    apply_section("hand_params", exp.hand)
+    apply_section("hand_params", exp.hand_params)
     apply_section("paths", exp.paths)
     apply_section("energy", exp.energy)
     apply_section("optimizer", exp.optimizer)

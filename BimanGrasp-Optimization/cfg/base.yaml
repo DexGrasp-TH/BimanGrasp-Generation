@@ -24,6 +24,8 @@ object_code_list:
 
 hand_params:
   name:
+  right_thumb_links:
+  left_thumb_links:
 
 paths:
   right_hand_mjcf: 
@@ -48,6 +50,8 @@ energy:
   thres_dis: 0.005
   thres_pen: 0.001
   pen_points: "hand" # 'object' / 'hand': points of <which> to mesh for H-O penetration calculation
+  joint_limit_func: "soft_quadratic" # 'quadratic', 'soft_quadratic'
+  joint_limit_margin: 0.1 # fraction of joint range that serves as soft zone.
 
 optimizer:
   switch_possibility: 0.5
@@ -57,20 +61,29 @@ optimizer:
   step_size: 0.005
   stepsize_period: 50
   momentum: 0.98
-  num_iterations: 3000
+  num_iterations: 6000
   joint_limit_clamp: True
   individual_ema_grad: True
   mean_ema_grad_weight: 1.0
+  keep_thumb_contact: True
 
 initialization:
-  distance_lower: 0.2
-  distance_upper: 0.3
-  theta_lower: -0.5235987755982988   # -pi/6
-  theta_upper: 0.5235987755982988    # pi/6
-  jitter_strength: 0.1
+  convex_expand_dis: 0.1 # 0.2
+  distance_lower: 0.05 # 0.2
+  distance_upper: 0.1 # 0.3
+  theta_lower: -0.001 # -0.5235987755982988   # -pi/6
+  theta_upper: 0.001 # 0.5235987755982988    # pi/6
+  jitter_strength: 0.05 # 0.1
   num_contacts: 4
+
   left_hand_joint_mu:
   right_hand_joint_mu:
+  left_hand_rot:
+  left_hand_trans:
+  right_hand_rot:
+  right_hand_trans:
+  
+  keep_thumb_contact: True
 
 model:
   n_surface_points: 2000 # surface points on each hand
@@ -81,3 +94,4 @@ model:
   multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
   hand_sdf_tool: "torchsdf"
   object_sdf_tool: "torchsdf"
+  intermediate_save_step: 10

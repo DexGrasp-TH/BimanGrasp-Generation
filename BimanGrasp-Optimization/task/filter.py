@@ -81,13 +81,14 @@ def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
     )
     return hand_pose
 
+
 class GraspExperiment:
     """
     Main experiment class for bimanual grasp generation.
     """
 
     def __init__(self, cfg: DictConfig):
-        self.cfg: DictConfig = cfg # hydra
+        self.cfg: DictConfig = cfg  # hydra
         self.device = None
         self.bimanual_pair = None
         self.object_model = None
@@ -125,6 +126,7 @@ class GraspExperiment:
             device=self.device,
             n_surface_points=self.config.model.n_surface_points,
             handedness="right_hand",
+            cfg=self.config.hand_params,
         )
         left_hand_model = HandModel(
             mjcf_path=self.config.paths.left_hand_mjcf,
@@ -133,6 +135,7 @@ class GraspExperiment:
             device=self.device,
             n_surface_points=self.config.model.n_surface_points,
             handedness="left_hand",
+            cfg=self.config.hand_params,
         )
 
         # Create object model
@@ -209,10 +212,8 @@ class GraspExperiment:
         for i_batch, object_code_list in enumerate(batched_object_code_list):
             self.object_model.initialize(object_code_list)
             n_obj = len(object_code_list)
-            right_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 
-                                            9 + len(right_joint_names)), device=self.device)
-            left_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 
-                                            9 + len(left_joint_names)), device=self.device)
+            right_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 9 + len(right_joint_names)), device=self.device)
+            left_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 9 + len(left_joint_names)), device=self.device)
 
             data_dict_lst_all_obj = []
             for i_obj, object_code in enumerate(object_code_list):
@@ -240,7 +241,11 @@ class GraspExperiment:
             self.bimanual_pair.right.set_parameters(right_hand_poses.reshape(n_obj * n_samples_per_obj, -1))
             self.bimanual_pair.left.set_parameters(left_hand_poses.reshape(n_obj * n_samples_per_obj, -1))
 
-            energy_terms = self.energy_computer.compute_all_energies(self.bimanual_pair, self.object_model, verbose=True)
+            energy_terms = self.energy_computer.compute_all_energies(
+                self.bimanual_pair, self.object_model, verbose=True
+            )
+
+            max_joint_violation = self.bimanual_pair.compute_joint_limits_violation()
 
             # # DEBUG check
             # obj_idx = 0
@@ -258,8 +263,11 @@ class GraspExperiment:
             thres_pen = self.cfg.task.thres.penetration
             thres_spen = self.cfg.task.thres.self_penetration
             thres_joint_limit = self.cfg.task.thres.joint_limit
-            valid = (energy_terms.penetration < thres_pen) & (energy_terms.self_penetration < thres_spen) \
-                & (energy_terms.joint_limits < thres_joint_limit)
+            valid = (
+                (energy_terms.penetration < thres_pen)
+                & (energy_terms.self_penetration < thres_spen)
+                & (max_joint_violation < thres_joint_limit)
+            )
             valid = valid.reshape(n_obj, n_samples_per_obj)
 
             n_valid += valid.sum().item()
@@ -275,10 +283,9 @@ class GraspExperiment:
                         np.save(save_path, data_dict_lst_all_obj[i_obj][i_grasp])
                         logging.info(f"Save filtered grasp data to {save_path}.")
 
-        logging.info(f"===============================================")
+        logging.info("===============================================")
         logging.info(f"Passed grasp ratio (all): {n_valid / n_all}.")
-        logging.info(f"===============================================")
-
+        logging.info("===============================================")
 
     def run_full_experiment(self, object_code_list: List[str]):
         """Run the complete experiment pipeline."""
@@ -294,7 +301,6 @@ class GraspExperiment:
 
 
 def task_filter(cfg: DictConfig):
-
     # merge cfg.hand.paths into cfg.paths
     cfg.paths = OmegaConf.merge(cfg.paths, cfg.hand.paths)
     cfg.hand_params = OmegaConf.merge(cfg.hand_params, cfg.hand.hand_params)

@@ -75,6 +75,7 @@ class MALAOptimizer:
         # Create bimanual pair for unified operations
         self.bimanual_pair = BimanualPair(left_hand_model, right_hand_model, device)
         self.device = device
+        self.config = config
 
         # Convert MALA parameters to tensors
         self.initial_temperature = torch.tensor(initial_temperature, dtype=torch.float, device=device)
@@ -183,8 +184,10 @@ class MALAOptimizer:
 
         # hard constraints for hand joint limits
         if self.joint_limit_clamp:
+            # enforce clamp in forward, allow gradient through the unclamped temp
             temp = hand_pose_new[:, 9:].clone()
-            hand_pose_new[:, 9:] = torch.clamp(temp, hand_model.joints_lower, hand_model.joints_upper)
+            clamped = torch.clamp(temp, hand_model.joints_lower, hand_model.joints_upper)
+            hand_pose_new[:, 9:] = temp + (clamped - temp).detach()
 
         # Temperature-adaptive discrete exploration (contact point resampling)
         batch_size, n_contact = hand_model.contact_point_indices.shape
@@ -196,9 +199,22 @@ class MALAOptimizer:
         switch_mask = torch.rand(batch_size, n_contact, dtype=torch.float, device=self.device) < adaptive_switch_prob
         contact_indices_new = hand_model.contact_point_indices.clone()
         if switch_mask.any():
-            contact_indices_new[switch_mask] = torch.randint(
-                hand_model.n_contact_candidates, size=[switch_mask.sum()], device=self.device
-            )
+            if not self.config.keep_thumb_contact:
+                contact_indices_new[switch_mask] = torch.randint(
+                    hand_model.n_contact_candidates, size=[switch_mask.sum()], device=self.device
+                )
+            else:
+                # non-thumb fingers
+                candidates = hand_model.non_thumb_contact_candi_indices
+                rand_contact_indices = candidates[
+                    torch.randint(len(candidates), (batch_size, n_contact), device=self.device)
+                ]
+                # thumb
+                candidates = hand_model.thumb_contact_candi_indices
+                rand_contact_indices[:, -1] = candidates[
+                    torch.randint(len(candidates), (batch_size,), device=self.device)
+                ]
+                contact_indices_new[switch_mask] = rand_contact_indices[switch_mask]
 
         # Apply updates to hand model
         hand_model.set_parameters(hand_pose_new, contact_indices_new)

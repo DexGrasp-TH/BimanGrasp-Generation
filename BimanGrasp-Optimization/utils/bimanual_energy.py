@@ -297,7 +297,7 @@ class BimanualEnergyComputer:
         energy_dis = self.contact_distance_computer.compute(bimanual_pair, object_model)
         energy_pen = self.penetration_computer.compute_object_penetration(bimanual_pair, object_model)
         energy_spen = self.penetration_computer.compute_self_penetration(bimanual_pair)
-        energy_joints = bimanual_pair.compute_joint_limits_energy()
+        energy_joints = bimanual_pair.compute_joint_limits_energy(self.config)
 
         # Compute FC and VEW together for efficiency (both need grasp matrix)
         if bimanual_pair.left.contact_points is not None and bimanual_pair.right.contact_points is not None:

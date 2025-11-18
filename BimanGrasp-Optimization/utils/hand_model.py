@@ -142,6 +142,7 @@ class HandModel:
         device="cpu",
         handedness=None,
         sdf_tool="torchsdf",
+        cfg=None,
     ):
         """
         Create a Hand Model for a MJCF robot
@@ -173,6 +174,7 @@ class HandModel:
         self.handedness = handedness
         self.n_surface_points = n_surface_points
         self.sdf_tool = sdf_tool
+        self.cfg = cfg  # hand params
 
         self.logger = logging.getLogger(__name__)
 
@@ -343,6 +345,18 @@ class HandModel:
         )
         self.n_contact_candidates = self.contact_candidates.shape[0]
 
+        # contact candidates on thumb finger
+        self.contact_candi_indices = torch.arange(self.n_contact_candidates, device=self.device)
+        self.thumb_contact_candi_indices = []
+        thumb_links = self.cfg.right_thumb_links if self.handedness == "right_hand" else self.cfg.left_thumb_links
+        for link_name in thumb_links:
+            link_index = self.link_name_to_link_index[link_name]
+            self.thumb_contact_candi_indices.append(torch.where(self.global_index_to_link_index == link_index)[0])
+        self.thumb_contact_candi_indices = torch.cat(self.thumb_contact_candi_indices, dim=0)
+        self.non_thumb_contact_candi_indices = self.contact_candi_indices[
+            ~torch.isin(self.contact_candi_indices, self.thumb_contact_candi_indices)
+        ]
+
         if self.mesh[link_name]["penetration_keypoints"] is not None:
             self.penetration_keypoints = [self.mesh[link_name]["penetration_keypoints"] for link_name in self.mesh]
             self.global_index_to_link_index_penetration = sum(
@@ -357,24 +371,6 @@ class HandModel:
                 self.global_index_to_link_index_penetration, dtype=torch.long, device=self.device
             )
             self.n_keypoints = self.penetration_keypoints.shape[0]
-
-    # def _build_adjacency_mask(self):
-    #     # TODO: make it more flexible to contact pairs or exluded contacts
-    #     self.adjacency_mask = torch.zeros([len(self.mesh), len(self.mesh)], dtype=torch.bool, device=self.device)
-
-    #     def build_mask_recurse(body):
-    #         for children in body.children:
-    #             link_name = body.link.name
-    #             child_link_name = children.link.name
-    #             if link_name in self.mesh.keys() and child_link_name in self.mesh.keys():
-    #                 parent_id = self.link_name_to_link_index[link_name]
-    #                 child_id = self.link_name_to_link_index[child_link_name]
-    #                 self.adjacency_mask[parent_id, child_id] = True
-    #                 self.adjacency_mask[child_id, parent_id] = True
-
-    #             build_mask_recurse(children)
-
-    #     build_mask_recurse(self.chain._root)
 
     def _build_link_collision_mask(self):
         """

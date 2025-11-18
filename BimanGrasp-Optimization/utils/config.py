@@ -16,6 +16,8 @@ ROTATION_NAMES = ["WRJRx", "WRJRy", "WRJRz"]
 @dataclass
 class HandConfig:
     name = None
+    right_thumb_links = None
+    left_thumb_links = None
 
 
 @dataclass
@@ -66,6 +68,8 @@ class EnergyConfig:
     thres_pen: float = 0.001  # Penetration threshold
 
     pen_points: str = "object"
+    joint_limit_func: str = "quadratic"
+    joint_limit_margin = 0.0
 
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary for energy function calls."""
@@ -99,6 +103,7 @@ class OptimizerConfig:
     joint_limit_clamp = False
     individual_ema_grad = False
     mean_ema_grad_weight = 1.0
+    keep_thumb_contact = True
 
     # Compatibility properties for MALAOptimizer
     @property
@@ -127,6 +132,7 @@ class InitializationConfig:
     """Hand initialization parameters."""
 
     # Spatial constraints
+    convex_expand_dis: float = 0.2
     distance_lower: float = 0.2  # Minimum initial distance from object
     distance_upper: float = 0.3  # Maximum initial distance from object
     theta_lower: float = -math.pi / 6  # Minimum rotation angle
@@ -140,6 +146,13 @@ class InitializationConfig:
 
     left_hand_joint_mu = None
     right_hand_joint_mu = None
+
+    right_hand_rot = None
+    right_hand_trans = None
+    left_hand_rot = None
+    left_hand_trans = None
+
+    keep_thumb_contact = True
 
 
 @dataclass
@@ -159,6 +172,8 @@ class ModelConfig:
     max_total_batch_size: int = 100  # Maximum total batch size for multi-GPU
 
     sdf_tool: str = None
+
+    intermediate_save_step = 500
 
 
 @dataclass
@@ -187,7 +202,7 @@ class ExperimentConfig:
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     initialization: InitializationConfig = field(default_factory=InitializationConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
-    hand: HandConfig = field(default_factory=HandConfig)
+    hand_params: HandConfig = field(default_factory=HandConfig)
 
     # Derived properties
     @property
