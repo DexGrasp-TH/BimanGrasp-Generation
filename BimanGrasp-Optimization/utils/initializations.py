@@ -34,27 +34,6 @@ def sample_contact_points(hand_model: HandModel, total_batch_size: int, args):
     return contact_indices
 
 
-def sample_finger_joint_angles(hand_model: HandModel, total_batch_size: int, args):
-    device = hand_model.device
-
-    # joint_angles_mu: hand-crafted canonicalized hand articulation
-    joint_angles_mu = args.left_hand_joint_mu if hand_model.handedness == "left_hand" else args.right_hand_joint_mu
-    joint_angles_mu = torch.tensor(joint_angles_mu, dtype=torch.float, device=device)
-    joint_angles_sigma = args.jitter_strength * (hand_model.joints_upper - hand_model.joints_lower)
-    joint_angles = torch.zeros([total_batch_size, hand_model.n_dofs], dtype=torch.float, device=device)
-
-    for i in range(hand_model.n_dofs):
-        torch.nn.init.trunc_normal_(
-            joint_angles[:, i],
-            joint_angles_mu[i],
-            joint_angles_sigma[i],
-            hand_model.joints_lower[i] - 1e-6,
-            hand_model.joints_upper[i] + 1e-6,
-        )
-
-    return joint_angles
-
-
 def sample_base_poses(
     hand_model: HandModel,
     p: torch.tensor,
@@ -107,6 +86,27 @@ def sample_base_poses(
     base_trans = palm_trans.reshape(-1, 3, 1) - base_rot @ palm_trans_in_base
 
     return base_trans.reshape(-1, 3), base_rot.reshape(-1, 3, 3)
+
+
+def sample_finger_joint_angles(hand_model: HandModel, total_batch_size: int, args):
+    device = hand_model.device
+
+    # joint_angles_mu: hand-crafted canonicalized hand articulation
+    joint_angles_mu = args.left_hand_joint_mu if hand_model.handedness == "left_hand" else args.right_hand_joint_mu
+    joint_angles_mu = torch.tensor(joint_angles_mu, dtype=torch.float, device=device)
+    joint_angles_sigma = args.jitter_strength * (hand_model.joints_upper - hand_model.joints_lower)
+    joint_angles = torch.zeros([total_batch_size, hand_model.n_dofs], dtype=torch.float, device=device)
+
+    for i in range(hand_model.n_dofs):
+        torch.nn.init.trunc_normal_(
+            joint_angles[:, i],
+            joint_angles_mu[i],
+            joint_angles_sigma[i],
+            hand_model.joints_lower[i] - 1e-6,
+            hand_model.joints_upper[i] + 1e-6,
+        )
+
+    return joint_angles
 
 
 def initialize_dual_hand(right_hand_model, left_hand_model, object_model, args):
@@ -178,6 +178,7 @@ def initialize_dual_hand(right_hand_model, left_hand_model, object_model, args):
     ################ Left hand finger joint angles ################
 
     joint_angles = sample_finger_joint_angles(left_hand_model, total_batch_size, args)
+
     hand_pose = torch.cat([left_translation, left_rotation.transpose(1, 2)[:, :2].reshape(-1, 6), joint_angles], dim=1)
     hand_pose.requires_grad_()
     # Initialize contact point indices
@@ -187,6 +188,7 @@ def initialize_dual_hand(right_hand_model, left_hand_model, object_model, args):
     ################ Right hand finger joint angles ################
 
     joint_angles = sample_finger_joint_angles(right_hand_model, total_batch_size, args)
+
     hand_pose = torch.cat(
         [right_translation, right_rotation.transpose(1, 2)[:, :2].reshape(-1, 6), joint_angles], dim=1
     )

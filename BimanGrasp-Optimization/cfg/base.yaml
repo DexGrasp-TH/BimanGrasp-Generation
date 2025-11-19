@@ -26,6 +26,8 @@ hand_params:
   name:
   right_thumb_links:
   left_thumb_links:
+  right_tip_links:
+  left_tip_links:
 
 paths:
   right_hand_mjcf: 
@@ -71,8 +73,8 @@ initialization:
   convex_expand_dis: 0.1 # 0.2
   distance_lower: 0.05 # 0.2
   distance_upper: 0.1 # 0.3
-  theta_lower: -0.001 # -0.5235987755982988   # -pi/6
-  theta_upper: 0.001 # 0.5235987755982988    # pi/6
+  theta_lower:  -0.5235987755982988   # -pi/6
+  theta_upper: 0.5235987755982988    # pi/6
   jitter_strength: 0.05 # 0.1
   num_contacts: 4
 
@@ -82,7 +84,7 @@ initialization:
   left_hand_trans:
   right_hand_rot:
   right_hand_trans:
-  
+
   keep_thumb_contact: True
 
 model:
@@ -94,4 +96,4 @@ model:
   multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
   hand_sdf_tool: "torchsdf"
   object_sdf_tool: "torchsdf"
-  intermediate_save_step: 10
+  intermediate_save_step: 500

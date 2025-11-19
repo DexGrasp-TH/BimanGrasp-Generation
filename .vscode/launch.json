@@ -8,7 +8,7 @@
       "program": "${file}",
       "cwd": "${workspaceFolder}/BimanGrasp-Optimization",
       "console": "integratedTerminal",
-      "args": ["task=visualize", "name=debug_server_10", "gpu=0"]
+      "args": ["task=compute_three_poses", "name=server_38", "gpu=0"]
     }
   ]
 }

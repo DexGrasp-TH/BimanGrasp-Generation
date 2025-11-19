@@ -19,6 +19,7 @@ import trimesh
 import cProfile
 from typing import List
 import json
+import pytorch_kinematics as pk
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from utils.hand_model import HandModel
@@ -80,6 +81,36 @@ def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
         device=device,
     )
     return hand_pose
+
+
+def damped_inverse(J, damping=1e-4):
+    """
+    Compute damped pseudoinverse for a batch of matrices.
+
+    Args:
+        J: tensor of shape (B, M, N)
+        damping: scalar λ (lambda)
+
+    Returns:
+        J_plus: tensor of shape (B, N, M)
+    """
+    B, M, N = J.shape
+    I = torch.eye(M, device=J.device).unsqueeze(0).expand(B, M, M)
+
+    # Compute JJ^T
+    JJt = J @ J.transpose(1, 2)
+
+    # Add damping term λ^2 I
+    A = JJt + (damping**2) * I
+
+    # Solve A X = I  (rather than taking inverse)
+    # J^+ = J^T A^{-1}
+    # => A^{-1} = solution of A X = I
+    A_inv = torch.linalg.solve(A, I)  # shape (B, M, N)
+
+    # J^+ = J^T * X
+    J_plus = J.transpose(1, 2) @ A_inv  # shape (B, N, M)
+    return J_plus
 
 
 class GraspExperiment:
@@ -182,7 +213,95 @@ class GraspExperiment:
         with open(config_path, "w") as f:
             f.write(str(self.config))
 
-    def run_filter(self, all_object_code_list):
+    def hand_prepare(self, hand_model: HandModel):
+        """
+        Pre-compute fingertips' contact point and SerialChain.
+        """
+        tip_links = (
+            self.cfg.hand_params.right_tip_links
+            if hand_model.handedness == "right_hand"
+            else self.cfg.hand_params.left_tip_links
+        )
+
+        contact_point_dict = {}
+        chain_dict = {}  # PK's SerialChain
+
+        for link_name in tip_links:
+            contact_candidates = hand_model.mesh[link_name]["contact_candidates"]
+
+            # Set the contact point as the average of the tip's contact candidates
+            contact_point_dict[link_name] = contact_candidates.mean(dim=0, keepdim=True)
+
+            chain_dict[link_name] = pk.SerialChain(hand_model.chain, link_name).to(
+                device=self.device, dtype=torch.float32
+            )
+
+        return contact_point_dict, chain_dict
+
+    def compute_three_hand_poses(
+        self,
+        object_model: ObjectModel,
+        hand_model: HandModel,
+        contact_point_dict,
+        chain_dict,
+    ):
+        hand_qpos = hand_model.hand_pose[:, 9:]
+        n_batch = hand_qpos.shape[0]
+        n_link = len(chain_dict.keys())
+        n_dof = hand_qpos.shape[1]
+        all_joint_names = hand_model.chain.get_joint_parameter_names()
+        device = hand_qpos.device
+        dtype = hand_qpos.dtype
+
+        # hand base pose in global frame
+        base_pose = torch.zeros((n_batch, 4, 4), dtype=dtype, device=device)
+        base_pose[:, :3, :3] = hand_model.global_rotation
+        base_pose[:, :3, 3] = hand_model.global_translation
+
+        jaco_dict = {}
+        contact_pos_dict = {}
+
+        for link_name in chain_dict.keys():
+            s_chain = chain_dict[link_name]
+            contact_point = contact_point_dict[link_name].repeat(n_batch, 1)
+
+            s_chain_joint_names = s_chain.get_joint_parameter_names()
+            s_chain_joint_indices = [all_joint_names.index(name) for name in s_chain_joint_names]
+            s_hand_qpos = hand_qpos[:, s_chain_joint_indices]
+            jaco = torch.zeros((n_batch, 3, n_dof), dtype=dtype, device=device)
+            jaco[:, :, s_chain_joint_indices] = s_chain.jacobian(th=s_hand_qpos, locations=contact_point)[
+                :, :3, :
+            ]  # only extract the translation part
+            jaco_dict[link_name] = jaco
+
+            # compute (virtual) contact point in global frame
+            link_pose = base_pose @ hand_model.current_status[link_name].get_matrix()
+            link_rot, link_pos = link_pose[:, :3, :3], link_pose[:, :3, 3]
+            contact_pos = link_rot @ contact_point.unsqueeze(2) + link_pos.unsqueeze(2)
+            contact_pos_dict[link_name] = contact_pos.reshape(-1, 3)
+
+        all_jaco = torch.cat([v.unsqueeze(1) for _, v in jaco_dict.items()], dim=1)  # shape (B, N_link, 3, N_dof)
+        all_contact_pos = torch.cat([v.unsqueeze(1) for _, v in contact_pos_dict.items()], dim=1)  # (B, N_link, 3)
+
+        distances, normals = object_model.cal_distance(all_contact_pos, with_closest_points=False)
+
+        spead_dis = 0.01
+        spread_movements = spead_dis * normals / torch.linalg.norm(normals, keepdim=True)  # shape (B, N_link, 3)
+        spread_movements = spread_movements.reshape(n_batch, n_link * 3, 1)
+        all_jaco = all_jaco.reshape(n_batch, n_link * 3, n_dof)
+
+        spread_delta_q = damped_inverse(all_jaco, damping=1e-1) @ spread_movements
+
+        pregrasp_qpos = hand_qpos + spread_delta_q
+
+        pregrasp_poses = hand_model.hand_pose.clone()
+        pregrasp_poses[:, 9:] = pregrasp_qpos
+
+        return pregrasp_poses
+
+        # in_contact = distances < 0.01
+
+    def run_task(self, all_object_code_list):
         """
         Filtering synthesized grasps with energy-based metrics.
         """
@@ -192,6 +311,12 @@ class GraspExperiment:
 
         right_joint_names = self.bimanual_pair.right.get_joint_names()
         left_joint_names = self.bimanual_pair.left.get_joint_names()
+
+        ############# Hand preparation #############
+        rh_contact_point_dict, rh_chain_dict = self.hand_prepare(self.bimanual_pair.right)
+        lh_contact_point_dict, lh_chain_dict = self.hand_prepare(self.bimanual_pair.left)
+
+        ############# Object list preparation #############
 
         # split all objects into batches
         n_samples_per_obj = self.config.model.batch_size
@@ -205,9 +330,6 @@ class GraspExperiment:
 
         batched_object_code_list = split_by_max_size(all_object_code_list, max_object_per_batch)
 
-        n_valid = 0
-        n_all = 0
-
         # Process the objects in batch
         for i_batch, object_code_list in enumerate(batched_object_code_list):
             self.object_model.initialize(object_code_list)
@@ -218,7 +340,9 @@ class GraspExperiment:
             data_dict_lst_all_obj = []
             for i_obj, object_code in enumerate(object_code_list):
                 # load synthesized grasps
-                data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)
+                data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)[
+                    :n_samples_per_obj
+                ]
                 data_dict_lst_all_obj.append(data_dict_lst)
 
                 for i_grasp, data_dict in enumerate(data_dict_lst):
@@ -238,54 +362,49 @@ class GraspExperiment:
                     right_hand_poses[i_obj, i_grasp, :] = right_hand_pose
                     left_hand_poses[i_obj, i_grasp, :] = left_hand_pose
 
-            self.bimanual_pair.right.set_parameters(right_hand_poses.reshape(n_obj * n_samples_per_obj, -1))
-            self.bimanual_pair.left.set_parameters(left_hand_poses.reshape(n_obj * n_samples_per_obj, -1))
+            right_hand_poses = right_hand_poses.reshape(n_obj * n_samples_per_obj, -1)
+            left_hand_poses = left_hand_poses.reshape(n_obj * n_samples_per_obj, -1)
 
-            energy_terms = self.energy_computer.compute_all_energies(
-                self.bimanual_pair, self.object_model, verbose=True
+            self.bimanual_pair.right.set_parameters(right_hand_poses)
+            self.bimanual_pair.left.set_parameters(left_hand_poses)
+
+            self.compute_three_hand_poses(
+                self.object_model, self.bimanual_pair.right, rh_contact_point_dict, rh_chain_dict
             )
 
-            max_joint_violation = self.bimanual_pair.compute_joint_limits_violation()
+        #     energy_terms = self.energy_computer.compute_all_energies(
+        #         self.bimanual_pair, self.object_model, verbose=True
+        #     )
 
-            # # DEBUG check
-            # obj_idx = 0
-            # grasp_idx = 2
-            # print(f"obj_name: {object_code_list[obj_idx]}, grasp_idx: {grasp_idx}")
+        #     max_joint_violation = self.bimanual_pair.compute_joint_limits_violation()
 
-            # keys = ["total", "force_closure", "distance", "penetration", "self_penetration", "joint_limits", "wrench_volume"]
-            # for key in keys:
-            #     val = getattr(energy_terms, key).clone()
-            #     val = val.reshape(n_obj, n_samples_per_obj)
-            #     print(f"{key}: {val[obj_idx, grasp_idx]}")
-            # a = 1
+        #     # Filtering
+        #     thres_pen = self.cfg.task.thres.penetration
+        #     thres_spen = self.cfg.task.thres.self_penetration
+        #     thres_joint_limit = self.cfg.task.thres.joint_limit
+        #     valid = (
+        #         (energy_terms.penetration < thres_pen)
+        #         & (energy_terms.self_penetration < thres_spen)
+        #         & (max_joint_violation < thres_joint_limit)
+        #     )
+        #     valid = valid.reshape(n_obj, n_samples_per_obj)
 
-            # Filtering
-            thres_pen = self.cfg.task.thres.penetration
-            thres_spen = self.cfg.task.thres.self_penetration
-            thres_joint_limit = self.cfg.task.thres.joint_limit
-            valid = (
-                (energy_terms.penetration < thres_pen)
-                & (energy_terms.self_penetration < thres_spen)
-                & (max_joint_violation < thres_joint_limit)
-            )
-            valid = valid.reshape(n_obj, n_samples_per_obj)
+        #     n_valid += valid.sum().item()
+        #     n_all += valid.numel()
 
-            n_valid += valid.sum().item()
-            n_all += valid.numel()
+        #     # Saving
+        #     save_dir = os.path.join(exp_path, "filtered")
+        #     for i_obj, object_code in enumerate(object_code_list):
+        #         for i_grasp in range(len(data_dict_lst)):
+        #             if valid[i_obj, i_grasp]:
+        #                 save_path = os.path.join(save_dir, object_code, f"grasp_{i_grasp}.npy")
+        #                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        #                 np.save(save_path, data_dict_lst_all_obj[i_obj][i_grasp])
+        #                 logging.info(f"Save filtered grasp data to {save_path}.")
 
-            # Saving
-            save_dir = os.path.join(exp_path, "filtered")
-            for i_obj, object_code in enumerate(object_code_list):
-                for i_grasp in range(len(data_dict_lst)):
-                    if valid[i_obj, i_grasp]:
-                        save_path = os.path.join(save_dir, object_code, f"grasp_{i_grasp}.npy")
-                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                        np.save(save_path, data_dict_lst_all_obj[i_obj][i_grasp])
-                        logging.info(f"Save filtered grasp data to {save_path}.")
-
-        logging.info("===============================================")
-        logging.info(f"Passed grasp ratio (all): {n_valid / n_all}.")
-        logging.info("===============================================")
+        # logging.info("===============================================")
+        # logging.info(f"Passed grasp ratio (all): {n_valid / n_all}.")
+        # logging.info("===============================================")
 
     def run_full_experiment(self, object_code_list: List[str]):
         """Run the complete experiment pipeline."""
@@ -297,10 +416,10 @@ class GraspExperiment:
         self.setup_energy()
         self.setup_logging()
 
-        self.run_filter(object_code_list)
+        self.run_task(object_code_list)
 
 
-def task_filter(cfg: DictConfig):
+def task_compute_three_poses(cfg: DictConfig):
     # merge cfg.hand.paths into cfg.paths
     cfg.paths = OmegaConf.merge(cfg.paths, cfg.hand.paths)
     cfg.hand_params = OmegaConf.merge(cfg.hand_params, cfg.hand.hand_params)

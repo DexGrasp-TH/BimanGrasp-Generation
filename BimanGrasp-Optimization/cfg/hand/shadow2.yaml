@@ -4,6 +4,9 @@ hand_params:
   right_thumb_links: ["rh_thdistal", "rh_thmiddle"]
   left_thumb_links: ["lh_thdistal", "lh_thmiddle"]
 
+  right_tip_links: ["rh_thdistal", "rh_ffdistal", "rh_mfdistal", "rh_rfdistal", "rh_lfdistal"] 
+  left_tip_links: ["lh_thdistal", "lh_ffdistal", "lh_mfdistal", "lh_rfdistal", "lh_lfdistal"] 
+
   
 
 initialization:
