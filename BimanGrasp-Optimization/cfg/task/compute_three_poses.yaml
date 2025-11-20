@@ -1,1 +1,2 @@
-squeeze_joint_magnitude: 0.1
+spread_joint_magnitude: -0.1 # smaller -> open
+squeeze_joint_magnitude: 0.1 # larger -> close

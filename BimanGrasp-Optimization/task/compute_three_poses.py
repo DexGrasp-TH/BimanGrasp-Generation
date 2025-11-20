@@ -310,6 +310,8 @@ class GraspExperiment:
             The grasp poses consisting of the pregrasp poses, grasp poses, and squeeze poses.
         """
         squeeze_joint_magnitude = self.cfg.task.squeeze_joint_magnitude
+        spread_joint_magnitude = self.cfg.task.spread_joint_magnitude
+
         hand_qpos = hand_model.hand_pose[:, 9:]
         all_joint_names = hand_model.chain.get_joint_parameter_names()
 
@@ -321,10 +323,11 @@ class GraspExperiment:
         )
         squeeze_joint_indices = [all_joint_names.index(name) for name in squeeze_joint_names]
 
+        spread_delta_q = torch.zeros_like(hand_qpos)
+        spread_delta_q[:, squeeze_joint_indices] = spread_joint_magnitude
+
         squeeze_delta_q = torch.zeros_like(hand_qpos)
         squeeze_delta_q[:, squeeze_joint_indices] = squeeze_joint_magnitude
-        spread_delta_q = torch.zeros_like(hand_qpos)
-        spread_delta_q[:, squeeze_joint_indices] = -squeeze_joint_magnitude
 
         pregrasp_poses = hand_model.hand_pose.clone()
         grasp_poses = hand_model.hand_pose.clone()

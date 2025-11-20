@@ -93,8 +93,8 @@ model:
   n_surface_points: 2000 # surface points on each hand
   num_samples: 2000 # surface points on object
   size: "large" # object scale sample range
-  batch_size: 4 # 128
-  max_total_batch_size: 4 # 1024
+  batch_size: 128 # 128
+  max_total_batch_size: 1024 # 1024
   multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
   hand_sdf_tool: "torchsdf"
   object_sdf_tool: "torchsdf"
