@@ -7,7 +7,16 @@ hand_params:
   right_tip_links: ["rh_thdistal", "rh_ffdistal", "rh_mfdistal", "rh_rfdistal", "rh_lfdistal"] 
   left_tip_links: ["lh_thdistal", "lh_ffdistal", "lh_mfdistal", "lh_rfdistal", "lh_lfdistal"] 
 
-  
+  right_squeeze_joints: ["rh_FFJ1", "rh_FFJ2", "rh_FFJ3",
+                         "rh_MFJ1", "rh_MFJ2", "rh_MFJ3",
+                         "rh_RFJ1", "rh_RFJ2", "rh_RFJ3",
+                         "rh_LFJ1", "rh_LFJ2", "rh_LFJ3",
+                         "rh_THJ1", "rh_THJ2", "rh_THJ5"]
+  left_squeeze_joints: ["lh_FFJ1", "lh_FFJ2", "lh_FFJ3",
+                        "lh_MFJ1", "lh_MFJ2", "lh_MFJ3",
+                        "lh_RFJ1", "lh_RFJ2", "lh_RFJ3",
+                        "lh_LFJ1", "lh_LFJ2", "lh_LFJ3",
+                        "lh_THJ1", "lh_THJ2", "lh_THJ5"]
 
 initialization:
   left_hand_joint_mu: [-0.1, 0, 0.3, 0, 

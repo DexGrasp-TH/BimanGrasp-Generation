@@ -28,7 +28,7 @@ from utils.bimanual_energy import calculate_energy, cal_energy, BimanualEnergyCo
 from utils.common import robust_compute_rotation_matrix_from_ortho6d
 from utils.common import Logger
 from utils.config import ExperimentConfig, create_config_from_args, TRANSLATION_NAMES, ROTATION_NAMES
-from utils.bimanual_handler import BimanualPair, save_grasp_results, EnergyTerms
+from utils.bimanual_handler import BimanualPair, save_grasp_results, EnergyTerms, build_bimanual_three_poses
 from utils.common import setup_device, set_random_seeds, ensure_directory
 
 
@@ -67,19 +67,6 @@ def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
     apply_section("model", exp.model)
 
     return exp
-
-
-# --- Utility to build hand pose tensor ---
-def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
-    """Build a torch tensor for hand pose given qpos dict."""
-    rot = np.array(transforms3d.euler.euler2mat(*[qpos[name] for name in rot_names]))
-    rot = rot[:, :2].T.ravel().tolist()  # flatten first two rotation columns
-    hand_pose = torch.tensor(
-        [qpos[name] for name in translation_names] + rot + [qpos[name] for name in joint_names],
-        dtype=torch.float,
-        device=device,
-    )
-    return hand_pose
 
 
 class GraspExperiment:
@@ -141,7 +128,7 @@ class GraspExperiment:
         # Create object model
         self.object_model = ObjectModel(
             data_root_path=self.config.paths.data_root_path,
-            batch_size_each=self.config.model.batch_size,
+            batch_size_each=self.config.model.batch_size * 3,  # consider pregrasp, grasp, and squeeze poses
             num_samples=self.config.model.num_samples,
             device=self.device,
             size=self.config.model.size,
@@ -182,13 +169,15 @@ class GraspExperiment:
         with open(config_path, "w") as f:
             f.write(str(self.config))
 
+    @torch.no_grad()
     def run_filter(self, all_object_code_list):
         """
         Filtering synthesized grasps with energy-based metrics.
+        Consider pregrasp, grasp, and squeeze poses.
         """
 
         exp_path = os.path.join(self.config.paths.experiments_base, self.config.name)
-        result_path = os.path.join(exp_path, "results")
+        result_path = os.path.join(exp_path, self.cfg.task.source_dir)
 
         right_joint_names = self.bimanual_pair.right.get_joint_names()
         left_joint_names = self.bimanual_pair.left.get_joint_names()
@@ -212,34 +201,53 @@ class GraspExperiment:
         for i_batch, object_code_list in enumerate(batched_object_code_list):
             self.object_model.initialize(object_code_list)
             n_obj = len(object_code_list)
-            right_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 9 + len(right_joint_names)), device=self.device)
-            left_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 9 + len(left_joint_names)), device=self.device)
+            right_hand_poses = torch.zeros(
+                (n_obj, n_samples_per_obj, 3, 9 + len(right_joint_names)), device=self.device
+            )
+            left_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 3, 9 + len(left_joint_names)), device=self.device)
 
             data_dict_lst_all_obj = []
             for i_obj, object_code in enumerate(object_code_list):
                 # load synthesized grasps
-                data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)
+                data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)[
+                    :n_samples_per_obj
+                ]
                 data_dict_lst_all_obj.append(data_dict_lst)
 
                 for i_grasp, data_dict in enumerate(data_dict_lst):
-                    right_qpos = data_dict["qpos_right"]
-                    left_qpos = data_dict["qpos_left"]
-                    obj_scale = data_dict["scale"]
-
                     # set object scale
-                    self.object_model.object_scale_tensor[i_obj, i_grasp] = obj_scale
+                    obj_scale = data_dict["scale"]
+                    self.object_model.object_scale_tensor[i_obj, 3 * i_grasp : 3 * i_grasp + 3] = obj_scale
 
-                    right_hand_pose = build_hand_pose(
-                        right_qpos, TRANSLATION_NAMES, ROTATION_NAMES, right_joint_names, self.device
+                    (
+                        right_pregrasp_poses,
+                        right_grasp_poses,
+                        right_squeeze_poses,
+                        left_pregrasp_poses,
+                        left_grasp_poses,
+                        left_squeeze_poses,
+                    ) = build_bimanual_three_poses(
+                        data_dict["pregrasp_qpos_right"],
+                        data_dict["qpos_right"],
+                        data_dict["squeeze_qpos_right"],
+                        data_dict["pregrasp_qpos_left"],
+                        data_dict["qpos_left"],
+                        data_dict["squeeze_qpos_left"],
+                        TRANSLATION_NAMES,
+                        ROTATION_NAMES,
+                        right_joint_names,
+                        left_joint_names,
+                        self.device,
                     )
-                    left_hand_pose = build_hand_pose(
-                        left_qpos, TRANSLATION_NAMES, ROTATION_NAMES, left_joint_names, self.device
-                    )
-                    right_hand_poses[i_obj, i_grasp, :] = right_hand_pose
-                    left_hand_poses[i_obj, i_grasp, :] = left_hand_pose
+                    right_hand_poses[i_obj, i_grasp, 0, :] = right_pregrasp_poses
+                    left_hand_poses[i_obj, i_grasp, 0, :] = left_pregrasp_poses
+                    right_hand_poses[i_obj, i_grasp, 1, :] = right_grasp_poses
+                    left_hand_poses[i_obj, i_grasp, 1, :] = left_grasp_poses
+                    right_hand_poses[i_obj, i_grasp, 2, :] = right_squeeze_poses
+                    left_hand_poses[i_obj, i_grasp, 2, :] = left_squeeze_poses
 
-            self.bimanual_pair.right.set_parameters(right_hand_poses.reshape(n_obj * n_samples_per_obj, -1))
-            self.bimanual_pair.left.set_parameters(left_hand_poses.reshape(n_obj * n_samples_per_obj, -1))
+            self.bimanual_pair.right.set_parameters(right_hand_poses.reshape(n_obj * n_samples_per_obj * 3, -1))
+            self.bimanual_pair.left.set_parameters(left_hand_poses.reshape(n_obj * n_samples_per_obj * 3, -1))
 
             energy_terms = self.energy_computer.compute_all_energies(
                 self.bimanual_pair, self.object_model, verbose=True
@@ -268,8 +276,9 @@ class GraspExperiment:
                 & (energy_terms.self_penetration < thres_spen)
                 & (max_joint_violation < thres_joint_limit)
             )
-            valid = valid.reshape(n_obj, n_samples_per_obj)
+            valid = valid.reshape(n_obj, n_samples_per_obj, 3)
 
+            valid = valid[:, :, 0] & valid[:, :, 1]  # consider only the pregrasp and gras poses
             n_valid += valid.sum().item()
             n_all += valid.numel()
 
@@ -277,7 +286,7 @@ class GraspExperiment:
             save_dir = os.path.join(exp_path, "filtered")
             for i_obj, object_code in enumerate(object_code_list):
                 for i_grasp in range(len(data_dict_lst)):
-                    if valid[i_obj, i_grasp]:
+                    if valid[i_obj, i_grasp] and valid[i_obj, i_grasp]:
                         save_path = os.path.join(save_dir, object_code, f"grasp_{i_grasp}.npy")
                         os.makedirs(os.path.dirname(save_path), exist_ok=True)
                         np.save(save_path, data_dict_lst_all_obj[i_obj][i_grasp])

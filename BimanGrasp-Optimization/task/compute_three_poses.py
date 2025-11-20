@@ -29,8 +29,9 @@ from utils.bimanual_energy import calculate_energy, cal_energy, BimanualEnergyCo
 from utils.common import robust_compute_rotation_matrix_from_ortho6d
 from utils.common import Logger
 from utils.config import ExperimentConfig, create_config_from_args, TRANSLATION_NAMES, ROTATION_NAMES
-from utils.bimanual_handler import BimanualPair, save_grasp_results, EnergyTerms
+from utils.bimanual_handler import BimanualPair, save_grasp_results, EnergyTerms, hand_pose_to_dict
 from utils.common import setup_device, set_random_seeds, ensure_directory
+from .vis_single_grasp import get_scene
 
 
 def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
@@ -238,7 +239,7 @@ class GraspExperiment:
 
         return contact_point_dict, chain_dict
 
-    def compute_three_hand_poses(
+    def compute_three_hand_poses_jaco(
         self,
         object_model: ObjectModel,
         hand_model: HandModel,
@@ -285,21 +286,57 @@ class GraspExperiment:
 
         distances, normals = object_model.cal_distance(all_contact_pos, with_closest_points=False)
 
-        spead_dis = 0.01
-        spread_movements = spead_dis * normals / torch.linalg.norm(normals, keepdim=True)  # shape (B, N_link, 3)
+        spead_dis = 0.05
+        spread_movements = (
+            spead_dis * normals / torch.linalg.norm(normals, dim=-1, keepdim=True)
+        )  # shape (B, N_link, 3)
         spread_movements = spread_movements.reshape(n_batch, n_link * 3, 1)
         all_jaco = all_jaco.reshape(n_batch, n_link * 3, n_dof)
 
-        spread_delta_q = damped_inverse(all_jaco, damping=1e-1) @ spread_movements
+        spread_delta_q = damped_inverse(all_jaco, damping=5e-2) @ spread_movements
 
-        pregrasp_qpos = hand_qpos + spread_delta_q
+        pregrasp_qpos = hand_qpos + spread_delta_q.squeeze(-1)
 
         pregrasp_poses = hand_model.hand_pose.clone()
         pregrasp_poses[:, 9:] = pregrasp_qpos
 
+        raise NotImplementedError("Unfinished.")
+
         return pregrasp_poses
 
-        # in_contact = distances < 0.01
+    def compute_three_hand_poses_simple(self, hand_model: HandModel):
+        """
+        Return:
+            The grasp poses consisting of the pregrasp poses, grasp poses, and squeeze poses.
+        """
+        squeeze_joint_magnitude = self.cfg.task.squeeze_joint_magnitude
+        hand_qpos = hand_model.hand_pose[:, 9:]
+        all_joint_names = hand_model.chain.get_joint_parameter_names()
+
+        # Get the joint indices those are allowed to spread/squeeze
+        squeeze_joint_names = (
+            self.cfg.hand_params.right_squeeze_joints
+            if hand_model.handedness == "right_hand"
+            else self.cfg.hand_params.left_squeeze_joints
+        )
+        squeeze_joint_indices = [all_joint_names.index(name) for name in squeeze_joint_names]
+
+        squeeze_delta_q = torch.zeros_like(hand_qpos)
+        squeeze_delta_q[:, squeeze_joint_indices] = squeeze_joint_magnitude
+        spread_delta_q = torch.zeros_like(hand_qpos)
+        spread_delta_q[:, squeeze_joint_indices] = -squeeze_joint_magnitude
+
+        pregrasp_poses = hand_model.hand_pose.clone()
+        grasp_poses = hand_model.hand_pose.clone()
+        squeeze_poses = hand_model.hand_pose.clone()
+        pregrasp_poses[:, 9:] = torch.clamp(
+            hand_qpos + spread_delta_q, hand_model.joints_lower, hand_model.joints_upper
+        )
+        squeeze_poses[:, 9:] = torch.clamp(
+            hand_qpos + squeeze_delta_q, hand_model.joints_lower, hand_model.joints_upper
+        )
+
+        return torch.stack([pregrasp_poses, grasp_poses, squeeze_poses], dim=1)
 
     def run_task(self, all_object_code_list):
         """
@@ -312,9 +349,9 @@ class GraspExperiment:
         right_joint_names = self.bimanual_pair.right.get_joint_names()
         left_joint_names = self.bimanual_pair.left.get_joint_names()
 
-        ############# Hand preparation #############
-        rh_contact_point_dict, rh_chain_dict = self.hand_prepare(self.bimanual_pair.right)
-        lh_contact_point_dict, lh_chain_dict = self.hand_prepare(self.bimanual_pair.left)
+        # ############# Hand preparation #############
+        # rh_contact_point_dict, rh_chain_dict = self.hand_prepare(self.bimanual_pair.right)
+        # lh_contact_point_dict, lh_chain_dict = self.hand_prepare(self.bimanual_pair.left)
 
         ############# Object list preparation #############
 
@@ -368,43 +405,68 @@ class GraspExperiment:
             self.bimanual_pair.right.set_parameters(right_hand_poses)
             self.bimanual_pair.left.set_parameters(left_hand_poses)
 
-            self.compute_three_hand_poses(
-                self.object_model, self.bimanual_pair.right, rh_contact_point_dict, rh_chain_dict
-            )
+            rh_grasp_poses = self.compute_three_hand_poses_simple(self.bimanual_pair.right)
+            lh_grasp_poses = self.compute_three_hand_poses_simple(self.bimanual_pair.left)
 
-        #     energy_terms = self.energy_computer.compute_all_energies(
-        #         self.bimanual_pair, self.object_model, verbose=True
-        #     )
+            ################# Save the data #################
+            rh_grasp_poses = rh_grasp_poses.reshape(n_obj, n_samples_per_obj, 3, -1)
+            lh_grasp_poses = lh_grasp_poses.reshape(n_obj, n_samples_per_obj, 3, -1)
 
-        #     max_joint_violation = self.bimanual_pair.compute_joint_limits_violation()
+            lh_joint_names = self.bimanual_pair.left.get_joint_names()
+            rh_joint_names = self.bimanual_pair.right.get_joint_names()
 
-        #     # Filtering
-        #     thres_pen = self.cfg.task.thres.penetration
-        #     thres_spen = self.cfg.task.thres.self_penetration
-        #     thres_joint_limit = self.cfg.task.thres.joint_limit
-        #     valid = (
-        #         (energy_terms.penetration < thres_pen)
-        #         & (energy_terms.self_penetration < thres_spen)
-        #         & (max_joint_violation < thres_joint_limit)
-        #     )
-        #     valid = valid.reshape(n_obj, n_samples_per_obj)
+            save_dir = os.path.join(exp_path, "three_poses")
+            os.makedirs(save_dir, exist_ok=True)
 
-        #     n_valid += valid.sum().item()
-        #     n_all += valid.numel()
+            for i_obj, object_code in enumerate(object_code_list):
+                data_dict_lst = []
+                for i_grasp in range(n_samples_per_obj):
+                    data_dict = data_dict_lst_all_obj[i_obj][i_grasp]
 
-        #     # Saving
-        #     save_dir = os.path.join(exp_path, "filtered")
-        #     for i_obj, object_code in enumerate(object_code_list):
-        #         for i_grasp in range(len(data_dict_lst)):
-        #             if valid[i_obj, i_grasp]:
-        #                 save_path = os.path.join(save_dir, object_code, f"grasp_{i_grasp}.npy")
-        #                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        #                 np.save(save_path, data_dict_lst_all_obj[i_obj][i_grasp])
-        #                 logging.info(f"Save filtered grasp data to {save_path}.")
+                    data_dict["pregrasp_qpos_right"] = hand_pose_to_dict(
+                        rh_grasp_poses[i_obj, i_grasp, 0, :], rh_joint_names
+                    )
+                    data_dict["squeeze_qpos_right"] = hand_pose_to_dict(
+                        rh_grasp_poses[i_obj, i_grasp, 2, :], rh_joint_names
+                    )
+                    data_dict["pregrasp_qpos_left"] = hand_pose_to_dict(
+                        lh_grasp_poses[i_obj, i_grasp, 0, :], lh_joint_names
+                    )
+                    data_dict["squeeze_qpos_left"] = hand_pose_to_dict(
+                        lh_grasp_poses[i_obj, i_grasp, 2, :], lh_joint_names
+                    )
 
-        # logging.info("===============================================")
-        # logging.info(f"Passed grasp ratio (all): {n_valid / n_all}.")
-        # logging.info("===============================================")
+                    data_dict_lst.append(data_dict)
+
+                save_path = os.path.join(save_dir, f"{object_code}.npy")
+                np.save(save_path, data_dict_lst)
+                logging.info(f"Compute pregrasp and squeeze poses and save to {save_path}.")
+
+        # # DEBUG
+        # self.bimanual_pair.right.set_parameters(rh_grasp_poses[:, 2, :])
+        # right_plot = self.bimanual_pair.right.get_plotly_data(
+        #     i=0, opacity=1.0, color="lightslategray", with_contact_points=False
+        # )
+        # object_plot = self.object_model.get_plotly_data(i=0, color="seashell", opacity=1.0)
+
+        # # Combine everything
+        # plot_lst = right_plot + object_plot
+        # fig = go.Figure(plot_lst)
+
+        # fig.update_layout(
+        #     paper_bgcolor="#E2F0D9",
+        #     plot_bgcolor="#E2F0D9",
+        #     scene_aspectmode="data",
+        #     scene=dict(
+        #         xaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+        #         yaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+        #         zaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showticklabels=False),
+        #     ),
+        # )
+
+        # fig.show()
+
+        # a = 1
 
     def run_full_experiment(self, object_code_list: List[str]):
         """Run the complete experiment pipeline."""
@@ -435,5 +497,11 @@ def task_compute_three_poses(cfg: DictConfig):
 
     experiment = GraspExperiment(cfg)
     experiment.run_full_experiment(object_code_list)
+
+    exp_path = os.path.join(cfg.paths.experiments_base, cfg.name)
+    save_dir = os.path.join(exp_path, "three_poses")
+    file_lst = glob.glob(os.path.join(save_dir, "**/*.npy"), recursive=True)
+    logging.info(f"Save {len(file_lst)} files (objects) in {save_dir}.")
+    logging.info("Finish the calculation of pregrasp and squeeze poses.")
 
     return

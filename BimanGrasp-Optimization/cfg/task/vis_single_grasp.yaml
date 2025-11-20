@@ -1,3 +1,6 @@
+
+dir: "three_poses" # 'results' or 'results/intermediate' or 'three_poses'
+
 object_code_list: ["ddg_gd_box_poisson_005"]
 grasp_indices: [0]
 opt_steps: [10]

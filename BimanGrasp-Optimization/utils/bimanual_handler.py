@@ -446,3 +446,80 @@ def save_grasp_results(
 
         # Save results
         np.save(os.path.join(result_path, filename), data_list, allow_pickle=True)
+
+
+# --- Utility to build hand pose tensor ---
+def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
+    """Build a torch tensor for hand pose given qpos dict."""
+    rot = np.array(transforms3d.euler.euler2mat(*[qpos[name] for name in rot_names]))
+    rot = rot[:, :2].T.ravel().tolist()  # flatten first two rotation columns
+    hand_pose = torch.tensor(
+        [qpos[name] for name in translation_names] + rot + [qpos[name] for name in joint_names],
+        dtype=torch.float,
+        device=device,
+    )
+    return hand_pose
+
+
+def build_bimanual_pose(
+    right_qpos,
+    left_qpos,
+    translation_names,
+    rot_names,
+    right_joint_names,
+    left_joint_names,
+    device,
+):
+    right_hand_pose = build_hand_pose(right_qpos, translation_names, rot_names, right_joint_names, device)
+    left_hand_pose = build_hand_pose(left_qpos, translation_names, rot_names, left_joint_names, device)
+    return right_hand_pose, left_hand_pose
+
+
+def build_bimanual_three_poses(
+    right_pregrasp_qpos,
+    right_grasp_qpos,
+    right_squeeze_qpos,
+    left_pregrasp_qpos,
+    left_grasp_qpos,
+    left_squeeze_qpos,
+    translation_names,
+    rot_names,
+    right_joint_names,
+    left_joint_names,
+    device,
+):
+    right_pregrasp_poses, left_pregrasp_poses = build_bimanual_pose(
+        right_pregrasp_qpos,
+        left_pregrasp_qpos,
+        translation_names,
+        rot_names,
+        right_joint_names,
+        left_joint_names,
+        device,
+    )
+    right_grasp_poses, left_grasp_poses = build_bimanual_pose(
+        right_grasp_qpos,
+        left_grasp_qpos,
+        translation_names,
+        rot_names,
+        right_joint_names,
+        left_joint_names,
+        device,
+    )
+    right_squeeze_poses, left_squeeze_poses = build_bimanual_pose(
+        right_squeeze_qpos,
+        left_squeeze_qpos,
+        translation_names,
+        rot_names,
+        right_joint_names,
+        left_joint_names,
+        device,
+    )
+    return (
+        right_pregrasp_poses,
+        right_grasp_poses,
+        right_squeeze_poses,
+        left_pregrasp_poses,
+        left_grasp_poses,
+        left_squeeze_poses,
+    )

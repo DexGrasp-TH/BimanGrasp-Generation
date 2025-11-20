@@ -84,7 +84,7 @@ def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
                     val = OmegaConf.to_object(v) if isinstance(v, (dict, list)) else v
                     setattr(target_obj, k, val)
 
-    apply_section("hand_params", exp.hand)
+    apply_section("hand_params", exp.hand_params)
     apply_section("paths", exp.paths)
     apply_section("energy", exp.energy)
     apply_section("optimizer", exp.optimizer)
@@ -151,6 +151,7 @@ class GraspExperiment:
             device=self.device,
             n_surface_points=self.config.model.n_surface_points,
             handedness="right_hand",
+            cfg=self.config.hand_params,
         )
         left_hand_model = HandModel(
             mjcf_path=self.config.paths.left_hand_mjcf,
@@ -159,6 +160,7 @@ class GraspExperiment:
             device=self.device,
             n_surface_points=self.config.model.n_surface_points,
             handedness="left_hand",
+            cfg=self.config.hand_params,
         )
 
         # Create object model
@@ -184,27 +186,25 @@ class GraspExperiment:
         """
 
         exp_path = os.path.join(self.config.paths.experiments_base, self.config.name)
-        result_path = os.path.join(exp_path, "results")
+        result_path = os.path.join(exp_path, self.cfg.task.dir)
 
         right_joint_names = self.bimanual_pair.right.get_joint_names()
         left_joint_names = self.bimanual_pair.left.get_joint_names()
 
         object_code_list = self.cfg.task.object_code_list
         grasp_indices = self.cfg.task.grasp_indices
-        opt_steps = self.cfg.task.opt_steps
+        opt_steps = self.cfg.task.opt_steps if self.cfg.task.dir.endswith("intermediate") else [-1]
 
         for object_code in object_code_list:
+            self.object_model.initialize([object_code])
             for grasp_idx in grasp_indices:
                 for opt_step in opt_steps:
-                    self.object_model.initialize([object_code])
+                    if self.cfg.task.dir.endswith("intermediate"):
+                        path = os.path.join(result_path, f"{object_code}_{opt_step}.npy")
+                    else:
+                        path = os.path.join(result_path, f"{object_code}.npy")
 
-                    # Load synthesized grasps
-                    if opt_step == -1:  # final result
-                        data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)
-                    else:  # specific opt step
-                        data_dict_lst = np.load(
-                            os.path.join(result_path, f"intermediate/{object_code}_{opt_step}.npy"), allow_pickle=True
-                        )
+                    data_dict_lst = np.load(path, allow_pickle=True)
                     data_dict = data_dict_lst[grasp_idx]
 
                     right_qpos = data_dict["qpos_right"]
@@ -226,6 +226,24 @@ class GraspExperiment:
                         0
                     )
 
+                    if "pregrasp_qpos_right" in data_dict.keys():
+                        right_pregrasp_qpos = data_dict["pregrasp_qpos_right"]
+                        right_pregrasp_pose = build_hand_pose(
+                            right_pregrasp_qpos, TRANSLATION_NAMES, ROTATION_NAMES, right_joint_names, self.device
+                        ).unsqueeze(0)
+                        right_squeeze_qpos = data_dict["squeeze_qpos_right"]
+                        right_squeeze_pose = build_hand_pose(
+                            right_squeeze_qpos, TRANSLATION_NAMES, ROTATION_NAMES, right_joint_names, self.device
+                        ).unsqueeze(0)
+                        left_pregrasp_qpos = data_dict["pregrasp_qpos_left"]
+                        left_pregrasp_pose = build_hand_pose(
+                            left_pregrasp_qpos, TRANSLATION_NAMES, ROTATION_NAMES, left_joint_names, self.device
+                        ).unsqueeze(0)
+                        left_squeeze_qpos = data_dict["squeeze_qpos_left"]
+                        left_squeeze_pose = build_hand_pose(
+                            left_squeeze_qpos, TRANSLATION_NAMES, ROTATION_NAMES, left_joint_names, self.device
+                        ).unsqueeze(0)
+
                     # Set object scale
                     self.object_model.object_scale_tensor[0] = obj_scale
 
@@ -233,10 +251,10 @@ class GraspExperiment:
                     self.bimanual_pair.right.set_parameters(right_hand_pose, right_contact_point_indices)
                     self.bimanual_pair.left.set_parameters(left_hand_pose, left_contact_point_indices)
 
+                    #################### Energy ####################
                     energy_terms = self.energy_computer.compute_all_energies(
                         self.bimanual_pair, self.object_model, verbose=True
                     )
-
                     keys = [
                         "total",
                         "force_closure",
@@ -251,8 +269,10 @@ class GraspExperiment:
                         val = getattr(energy_terms, key).clone()
                         print(f"{key}: {val}")
 
-                    # --- Visualization ---
+                    #################### Visualization ####################
                     # Final poses (solid colors)
+                    self.bimanual_pair.right.set_parameters(right_hand_pose, right_contact_point_indices)
+                    self.bimanual_pair.left.set_parameters(left_hand_pose, left_contact_point_indices)
                     right_plot = self.bimanual_pair.right.get_plotly_data(
                         i=0, opacity=1.0, color="lightslategray", with_contact_points=True
                     )
@@ -291,6 +311,26 @@ class GraspExperiment:
                     plot_lst = (
                         right_plot + left_plot + object_plot + [obj_surface_points_plot, hand_surface_points_plot]
                     )
+
+                    if "pregrasp_qpos_right" in data_dict.keys():
+                        self.bimanual_pair.right.set_parameters(right_pregrasp_pose)
+                        self.bimanual_pair.left.set_parameters(left_pregrasp_pose)
+                        right_pregrasp_plot = self.bimanual_pair.right.get_plotly_data(
+                            i=0, opacity=0.5, color="#FFB74D", with_contact_points=False
+                        )
+                        left_pregrasp_plot = self.bimanual_pair.left.get_plotly_data(
+                            i=0, opacity=0.5, color="#FFB74D", with_contact_points=False
+                        )
+                        self.bimanual_pair.right.set_parameters(right_squeeze_pose)
+                        self.bimanual_pair.left.set_parameters(left_squeeze_pose)
+                        right_squeeze_plot = self.bimanual_pair.right.get_plotly_data(
+                            i=0, opacity=0.5, color="#81C784", with_contact_points=False
+                        )
+                        left_squeeze_plot = self.bimanual_pair.left.get_plotly_data(
+                            i=0, opacity=0.5, color="#81C784", with_contact_points=False
+                        )
+                        plot_lst += right_pregrasp_plot + left_pregrasp_plot + right_squeeze_plot + left_squeeze_plot
+
                     fig = go.Figure(plot_lst)
 
                     fig.update_layout(
