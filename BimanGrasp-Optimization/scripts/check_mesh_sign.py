@@ -3,12 +3,12 @@ import kaolin
 from torchsdf import index_vertices_by_faces, compute_sdf
 import os
 import torch
-from time import time
+import time
 import numpy as np
 
 device = "cuda:0"
 
-meshpath = "mjcf/shadow2/assets/th_distal_pst_cut_sm.obj"
+meshpath = "mjcf/dual_ur5_shadow/dual_ur5/dual_base.STL"
 mesh = trimesh.load(meshpath)
 
 bbox = mesh.bounds  # shape (2,3): [[min_x, min_y, min_z], [max_x, max_y, max_z]]
@@ -37,20 +37,27 @@ face_verts = kaolin.ops.mesh.index_vertices_by_faces(verts.unsqueeze(0), faces)
 # (Nf, 3, 3)
 face_verts_ts = index_vertices_by_faces(verts, faces)
 
-# Kaolin
-# (1, Ns)
-signs = kaolin.ops.mesh.check_sign(verts.unsqueeze(0), faces, x.unsqueeze(0))
-signs = torch.where(signs, -1 * torch.ones_like(signs, dtype=torch.int32), torch.ones_like(signs, dtype=torch.int32))
+with torch.no_grad():
+    # Kaolin
+    # (1, Ns)
+    t1 = time.time()
+    signs = kaolin.ops.mesh.check_sign(verts.unsqueeze(0), faces, x.unsqueeze(0))
+    signs = torch.where(
+        signs, -1 * torch.ones_like(signs, dtype=torch.int32), torch.ones_like(signs, dtype=torch.int32)
+    )
+    print(f"Kaolin time cost: {time.time() - t1}")
 
-# TorchSDF
-# (Ns)
-distances_ts, signs_ts, normals_ts, clst_points_ts = compute_sdf(x, face_verts_ts)
-# (1, Ns)
-dif = signs_ts != signs
-dif = dif.reshape(-1)
-miss_points = x[dif, :]
-color = torch.zeros_like(miss_points).int()
-color[:, 0] = 255
+    # TorchSDF
+    # (Ns)
+    t1 = time.time()
+    distances_ts, signs_ts, normals_ts, clst_points_ts = compute_sdf(x, face_verts_ts)
+    # (1, Ns)
+    dif = signs_ts != signs
+    dif = dif.reshape(-1)
+    miss_points = x[dif, :]
+    color = torch.zeros_like(miss_points).int()
+    color[:, 0] = 255
+    print(f"TorchSDF time cost: {time.time() - t1}")
 
 miss_cloud = None
 GREEN = "\033[92m"

@@ -14,8 +14,9 @@ import pytorch3d.ops
 import plotly.graph_objects as go
 import logging
 import copy
+from omegaconf import DictConfig, OmegaConf
+from typing import Optional, List, Union, Dict
 import re
-
 from mr_utils.utils_calc import sciR, transformPositions, posQuat2Isometry3d, quatWXYZ2XYZW
 from pytorch3d.transforms.rotation_conversions import quaternion_to_matrix
 
@@ -132,95 +133,42 @@ def extract_trimesh_from_mjcf(model, use_chamfer_box=True):
     return link_geom_dict
 
 
-class HandModel:
+class DualArmHandModel:
     def __init__(
         self,
-        mjcf_path,
-        contact_points_path,
-        penetration_points_path,
         n_surface_points=0,
         device="cpu",
-        handedness=None,
         sdf_tool="torchsdf",
-        cfg=None,
+        cfg: DictConfig = None,
     ):
-        """
-        Create a Hand Model for a MJCF robot
-
-        Parameters
-        ----------
-        mjcf_path: str
-            path to mjcf file
-        contact_points_path: str
-            path to hand-selected contact candidates
-        penetration_points_path: str
-            path to hand-selected penetration keypoints
-        n_surface_points: int
-            number of points to sample from surface of hand, use fps
-        device: str | torch.Devicet
-            device for torch tensors
-        """
-
-        """
-        We need different joint initialization for left hand and right hand
-
-        Parameter
-        ----------
-        handedness: str
-            initialize left or right hand
-        """
-
         self.device = device
-        self.handedness = handedness
-        self.n_surface_points = n_surface_points
         self.sdf_tool = sdf_tool
-        self.cfg = cfg  # hand params
+        self.cfg = cfg
+        self.n_surface_points = n_surface_points
 
-        self.logger = logging.getLogger(__name__)
+        mjcf_path = cfg.mjcf_path
+        urdf_path = cfg.urdf_path
 
         # load articulation
         if not mjcf_path.endswith(".xml"):
             raise Exception("Only support .xml robot file.")
 
-        # Build pytorch kinematics chain
         self.chain = pk.build_chain_from_mjcf(open(mjcf_path).read()).to(dtype=torch.float, device=device)
-        self.n_dofs = len(self.chain.get_joint_parameter_names())
 
         # load mujoco model
         self.mj_model = load_mujoco_model(mjcf_path, load_mode="xml_string")
 
-        self._build_mesh(
-            mjcf_path,
-            contact_points_path,
-            penetration_points_path,
-        )
+        self._build_mesh()
         self._build_link_collision_mask()
 
-        # parameters
-        self.hand_pose = None
-        self.contact_point_indices = None
-        self.global_translation = None
-        self.global_rotation = None
-        self.current_status = None
-        self.contact_points = None
+        self.qpos = None
         self.surface_points_in_base = None
         self.surface_point = None
 
-    def _build_mesh(
-        self,
-        mjcf_path,
-        contact_points_path,
-        penetration_points_path,
-    ):
+    def _build_mesh(self):
         """
-        Build mesh informations, contact point candidates, and penetration points for each link.
+        Build mesh informations for each link.
         """
-        # load contact points and penetration points
-        contact_points = json.load(open(contact_points_path, "r")) if contact_points_path is not None else None
-        penetration_points = (
-            json.load(open(penetration_points_path, "r")) if penetration_points_path is not None else None
-        )
-
         # build mesh
         self.mesh = {}
         areas = {}
@@ -273,26 +221,10 @@ class HandModel:
             link_vertices = torch.cat(link_vertices, dim=0)
             link_faces = torch.cat(link_faces, dim=0)
 
-            # the contact point candidates and penetration keypoints of this link
-            if link_name not in contact_points:
-                contact_points[link_name] = []
-            contact_candidates = (
-                torch.tensor(contact_points[link_name], dtype=torch.float32, device=self.device).reshape(-1, 3)
-                if contact_points is not None
-                else None
-            )
-            penetration_keypoints = (
-                torch.tensor(penetration_points[link_name], dtype=torch.float32, device=self.device).reshape(-1, 3)
-                if penetration_points is not None
-                else None
-            )
-
             self.mesh[link_name].update(
                 {
                     "vertices": link_vertices,
                     "faces": link_faces,
-                    "contact_candidates": contact_candidates,
-                    "penetration_keypoints": penetration_keypoints,
                 }
             )
             areas[link_name] = tm.Trimesh(link_vertices.cpu().numpy(), link_faces.cpu().numpy()).area.item()
@@ -335,43 +267,6 @@ class HandModel:
             ]
         )  # specify that each surface point belongs to which link
 
-        self.contact_candidates = [self.mesh[link_name]["contact_candidates"] for link_name in self.mesh]
-        self.global_index_to_link_index = sum(
-            [[i] * len(contact_candidates) for i, contact_candidates in enumerate(self.contact_candidates)], []
-        )
-        self.contact_candidates = torch.cat(self.contact_candidates, dim=0)
-        self.global_index_to_link_index = torch.tensor(
-            self.global_index_to_link_index, dtype=torch.long, device=self.device
-        )
-        self.n_contact_candidates = self.contact_candidates.shape[0]
-
-        # contact candidates on thumb finger
-        self.contact_candi_indices = torch.arange(self.n_contact_candidates, device=self.device)
-        self.thumb_contact_candi_indices = []
-        thumb_links = self.cfg.right_thumb_links if self.handedness == "right_hand" else self.cfg.left_thumb_links
-        for link_name in thumb_links:
-            link_index = self.link_name_to_link_index[link_name]
-            self.thumb_contact_candi_indices.append(torch.where(self.global_index_to_link_index == link_index)[0])
-        self.thumb_contact_candi_indices = torch.cat(self.thumb_contact_candi_indices, dim=0)
-        self.non_thumb_contact_candi_indices = self.contact_candi_indices[
-            ~torch.isin(self.contact_candi_indices, self.thumb_contact_candi_indices)
-        ]
-
-        if self.mesh[link_name]["penetration_keypoints"] is not None:
-            self.penetration_keypoints = [self.mesh[link_name]["penetration_keypoints"] for link_name in self.mesh]
-            self.global_index_to_link_index_penetration = sum(
-                [
-                    [i] * len(penetration_keypoints)
-                    for i, penetration_keypoints in enumerate(self.penetration_keypoints)
-                ],
-                [],
-            )
-            self.penetration_keypoints = torch.cat(self.penetration_keypoints, dim=0)
-            self.global_index_to_link_index_penetration = torch.tensor(
-                self.global_index_to_link_index_penetration, dtype=torch.long, device=self.device
-            )
-            self.n_keypoints = self.penetration_keypoints.shape[0]
-
     def _build_link_collision_mask(self):
         """
         Build the collision mask based on xml's contact pair information.
@@ -395,7 +290,6 @@ class HandModel:
                 parent_id = self.link_name_to_link_index[body1_name]
                 child_id = self.link_name_to_link_index[body2_name]
                 self.collision_mask[parent_id, child_id] = self.collision_mask[child_id, parent_id] = True
-
         else:
             self.collision_mask = torch.ones([len(self.mesh), len(self.mesh)], dtype=torch.bool, device=self.device)
             # exclude self-collision-detection
@@ -425,53 +319,24 @@ class HandModel:
                         child_id = self.link_name_to_link_index[body2_name]
                         self.collision_mask[parent_id, child_id] = self.collision_mask[child_id, parent_id] = False
 
-    def get_joint_names(self):
-        return copy.copy(self.joints_names)
-
-    def set_parameters(self, hand_pose, contact_point_indices=None):
+    def set_parameters(self, qpos):
         """
         Set translation, rotation, joint angles, and contact points of grasps
 
         Parameters
         ----------
-        hand_pose: (B, 3+6+`n_dofs`) torch.FloatTensor
-            translation, rotation in rot6d, and joint angles
-        contact_point_indices: (B, `n_contact`) [Optional]torch.LongTensor
-            indices of contact candidates
+        qpos: (B, n_dofs) torch.FloatTensor
+            joint angles
         """
 
-        """
-        You will need surface points to calculate the penetration energy between the left hand and the right hand 
-        """
-
-        self.hand_pose = hand_pose.clone()
-        if self.hand_pose.requires_grad:
-            self.hand_pose.retain_grad()
-        self.global_translation = self.hand_pose[:, 0:3]
-        self.global_rotation = robust_compute_rotation_matrix_from_ortho6d(self.hand_pose[:, 3:9])
-        self.current_status = self.chain.forward_kinematics(self.hand_pose[:, 9:])
-        if contact_point_indices is not None:
-            self.contact_point_indices = contact_point_indices
-            batch_size, n_contact = contact_point_indices.shape
-            self.contact_points = self.contact_candidates[self.contact_point_indices]
-            link_indices = self.global_index_to_link_index[self.contact_point_indices]
-            transforms = torch.zeros(batch_size, n_contact, 4, 4, dtype=torch.float, device=self.device)
-            for link_name in self.mesh:
-                mask = link_indices == self.link_name_to_link_index[link_name]
-                cur = self.current_status[link_name].get_matrix().unsqueeze(1).expand(batch_size, n_contact, 4, 4)
-                transforms[mask] = cur[mask]
-            self.contact_points = torch.cat(
-                [self.contact_points, torch.ones(batch_size, n_contact, 1, dtype=torch.float, device=self.device)],
-                dim=2,
-            )
-            self.contact_points = (transforms @ self.contact_points.unsqueeze(3))[:, :, :3, 0]
-            self.contact_points = self.contact_points @ self.global_rotation.transpose(
-                1, 2
-            ) + self.global_translation.unsqueeze(1)
+        self.qpos = qpos.clone()
+        if self.qpos.requires_grad:
+            self.qpos.retain_grad()
+        self.current_status = self.chain.forward_kinematics(self.qpos)
 
         # get surface points in world frame
-        self.surface_points_in_base = points = self.get_surface_points()  # in base
-        self.surface_point = points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
+        self.surface_points_in_base = self.get_surface_points()  # in base
+        self.surface_point = self.surface_points_in_base
 
     def calculate_distance(self, x):
         """
@@ -484,9 +349,6 @@ class HandModel:
         x: (B, N, 3) torch.Tensor
             points in world frame
         """
-        # x in hand base frame
-        x = (x - self.global_translation.unsqueeze(1)) @ self.global_rotation
-
         dis_all = []
         for link_name in self.mesh.keys():
             dis = self.calculate_dis_to_link(x_in_base=x, link_name=link_name)
@@ -533,14 +395,6 @@ class HandModel:
                 dis_local = torch.sqrt(dis_local + 1e-8)
                 dis_local = dis_local * (-dis_signs)
 
-                # # DEBUG
-                # if link_name == "rh_lfdistal":
-                #     point_idx = 0
-                #     print(
-                #         f"link_name: {link_name}, geom_type: {geom_type}, dis_local[{point_idx}]: {dis_local[point_idx]}"
-                #     )
-                #     a = 1
-
             elif geom_type == mujoco.mjtGeom.mjGEOM_CAPSULE:
                 half_height = geom["geom_size"][1]
                 radius = geom["geom_size"][0]
@@ -561,17 +415,10 @@ class HandModel:
             else:
                 raise NotImplementedError(f"Unsupported geom type in calculate_distance(): {geom_type}!")
 
-            self.logger.debug(f"link_name: {link_name}, geom_type: {geom_type}, dis_local: {dis_local}")
+            # self.logger.debug(f"link_name: {link_name}, geom_type: {geom_type}, dis_local: {dis_local}")
             dis_all.append(dis_local.reshape(x_in_base.shape[0], x_in_base.shape[1]))
 
         dis_max = torch.max(torch.stack(dis_all, dim=0), dim=0)[0]  # max distance to all geoms of this link
-
-        # # DEBUG
-        # print(f"link_name: {link_name}")
-        # print(f"dis_max: {dis_max[0].max()}")
-        # if link_name == "rh_lfdistal":
-        #     idx = torch.argmax(dis_max[0])
-        #     a = 1
 
         return dis_max
 
@@ -607,57 +454,13 @@ class HandModel:
 
         dis_max = torch.max(torch.stack(dis, dim=0), dim=0)[0]  # the max distance to other links of each surface point
 
-        # # DEBUG: check whether the link names are correct
-        # sp_idx = torch.argmax(dis_max)
-        # max_dis = dis_max[:, sp_idx]
-        # link_index = self.surface_points_link_indices[sp_idx].item()
-        # link_index_to_link_name = {v: k for k, v in self.link_name_to_link_index.items()}
-        # link_name = link_index_to_link_name[link_index]
-        # print(f"link 1 name: {link_name}, sp_idx: {sp_idx}")
-        # print(f"pos of this point in base: {x[0, sp_idx]}")
-        # for i, link2_name in enumerate(self.mesh):
-        #     d = dis[i]
-        #     print(f"link 2 name: {link2_name}, d[:, {sp_idx}]: {d[:, sp_idx]}")
-
         return dis_max
 
-    def self_penetration(self, mode="surface_points"):
-        if mode == "surface_points":
-            dis = self.cal_self_distance()
-            dis[dis <= 0] = 0
-            E_spen = dis.sum(-1)
-            return E_spen
-
-        elif mode == "penetration_points":
-            if not self.penetration_keypoints:
-                raise NameError("No 'self.penetration_keypoints' exists!")
-
-            batch_size = self.global_translation.shape[0]
-            points = self.penetration_keypoints.clone().repeat(batch_size, 1, 1)
-            link_indices = self.global_index_to_link_index_penetration.clone().repeat(batch_size, 1)
-
-            # Corresponding link poses of each keypoint
-            transforms = torch.zeros(batch_size, self.n_keypoints, 4, 4, dtype=torch.float, device=self.device)
-            for link_name in self.mesh:
-                mask = link_indices == self.link_name_to_link_index[link_name]
-                cur = (
-                    self.current_status[link_name].get_matrix().unsqueeze(1).expand(batch_size, self.n_keypoints, 4, 4)
-                )
-                transforms[mask] = cur[mask]
-
-            # Get the point position in world frame
-            points = torch.cat(
-                [points, torch.ones(batch_size, self.n_keypoints, 1, dtype=torch.float, device=self.device)], dim=2
-            )  # extend to [x, y, z, 1]
-            points = (transforms @ points.unsqueeze(3))[:, :, :3, 0]
-            points = points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
-
-            # Compute the distance of each pair of keypoints
-            dis = (points.unsqueeze(1) - points.unsqueeze(2) + 1e-13).square().sum(3).sqrt()
-            dis = torch.where(dis < 1e-6, 1e6 * torch.ones_like(dis), dis)  # avoid self-keypoint-computation
-            dis = 0.02 - dis
-            E_spen = torch.where(dis > 0, dis, torch.zeros_like(dis))
-            return E_spen.sum((1, 2))
+    def self_penetration(self):
+        dis = self.cal_self_distance()
+        dis[dis <= 0] = 0
+        E_spen = dis.sum(-1)
+        return E_spen
 
     def get_surface_points(self):
         """
@@ -669,7 +472,7 @@ class HandModel:
             surface points
         """
         points = []
-        batch_size = self.global_translation.shape[0]
+        batch_size = self.qpos.shape[0]
         for link_name in self.mesh:
             n_surface_points = self.mesh[link_name]["surface_points"].shape[0]
             points.append(self.current_status[link_name].transform_points(self.mesh[link_name]["surface_points"]))
@@ -685,27 +488,7 @@ class HandModel:
         """
         return self.surface_point.clone()
 
-    def get_contact_candidates(self):
-        """
-        Get all contact candidates
-
-        Returns
-        -------
-        points: (N, `n_contact_candidates`, 3) torch.Tensor
-            contact candidates
-        """
-        points = []
-        batch_size = self.global_translation.shape[0]
-        for link_name in self.mesh:
-            n_surface_points = self.mesh[link_name]["contact_candidates"].shape[0]
-            points.append(self.current_status[link_name].transform_points(self.mesh[link_name]["contact_candidates"]))
-            if 1 < batch_size != points[-1].shape[0]:
-                points[-1] = points[-1].expand(batch_size, n_surface_points, 3)
-        points = torch.cat(points, dim=-2).to(self.device)
-        points = points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
-        return points
-
-    def get_plotly_data(self, i, opacity=0.5, color="lightblue", with_contact_points=False, pose=None, with_axes=True):
+    def get_plotly_data(self, i, opacity=0.5, color="lightblue", with_axes=True):
         """
         Get visualization data for plotly.graph_objects
 
@@ -717,44 +500,23 @@ class HandModel:
             opacity
         color: str
             color of mesh
-        with_contact_points: bool
-            whether to visualize contact points
-        pose: (4, 4) matrix
-            homogeneous transformation matrix
 
         Returns
         -------
         data: list
             list of plotly.graph_object visualization data
         """
-        if pose is not None:
-            pose = np.array(pose, dtype=np.float32)
+
         data = []
         for link_name in self.mesh:
             v = self.current_status[link_name].transform_points(self.mesh[link_name]["vertices"])
             if len(v.shape) == 3:
                 v = v[i]
-            v = v @ self.global_rotation[i].T + self.global_translation[i]
             v = v.detach().cpu()
             f = self.mesh[link_name]["faces"].detach().cpu()
-            if pose is not None:
-                v = v @ pose[:3, :3].T + pose[:3, 3]
             data.append(
                 go.Mesh3d(
                     x=v[:, 0], y=v[:, 1], z=v[:, 2], i=f[:, 0], j=f[:, 1], k=f[:, 2], color=color, opacity=opacity
-                )
-            )
-        if with_contact_points:
-            contact_points = self.contact_points[i].detach().cpu()
-            if pose is not None:
-                contact_points = contact_points @ pose[:3, :3].T + pose[:3, 3]
-            data.append(
-                go.Scatter3d(
-                    x=contact_points[:, 0],
-                    y=contact_points[:, 1],
-                    z=contact_points[:, 2],
-                    mode="markers",
-                    marker=dict(color="red", size=5),
                 )
             )
 
@@ -765,13 +527,10 @@ class HandModel:
             axes = np.eye(3) * axis_length
             colors = ["red", "green", "blue"]
             names = ["x", "y", "z"]
-
             for j in range(3):
                 p1 = origin
                 p2 = axes[j]
-                if pose is not None:
-                    p1 = p1 @ pose[:3, :3].T + pose[:3, 3]
-                    p2 = p2 @ pose[:3, :3].T + pose[:3, 3]
+
                 data.append(
                     go.Scatter3d(
                         x=[p1[0], p2[0]],
@@ -785,74 +544,186 @@ class HandModel:
 
         return data
 
-    def get_trimesh_data(self, i, rgba, pose=None, with_contact_points=False, with_axes=False):
-        if pose is not None:
-            pose = np.array(pose, dtype=np.float32)
+    def create_serial_chain(
+        self,
+        handedness,
+    ):
+        hand_base_link = self.cfg.rh_base_link if handedness == "right_hand" else self.cfg.lh_base_link
+        s_chain = pk.SerialChain(self.urdf_chain, hand_base_link).to(device=self.device, dtype=torch.float32)
 
-        data = []
-        for link_name in self.mesh:
-            v = self.current_status[link_name].transform_points(self.mesh[link_name]["vertices"])
-            if len(v.shape) == 3:
-                v = v[i]
-            v = v @ self.global_rotation[i].T + self.global_translation[i]
-            v = v.detach().cpu()
-            f = self.mesh[link_name]["faces"].detach().cpu()
-            if pose is not None:
-                v = v @ pose[:3, :3].T + pose[:3, 3]
+        serial_joint_names = s_chain.get_joint_parameter_names()
+        serial_indices = [self.joints_names.index(name) for name in serial_joint_names]
 
-            mesh = tm.Trimesh(vertices=v, faces=f, process=False)
-            mesh.visual.vertex_colors = rgba
+        return s_chain, serial_indices
 
-            data.append(mesh)
+    def create_ik_solver(
+        self,
+        s_chain,
+        num_retries=10,
+        regularlization=1e-3,
+        initial_noise_std: Optional[torch.tensor] = None,
+    ):
+        """
+        Args:
+            initial_noise_std: (B, N_full_joints)
+        """
+        self.n_ik_retries = num_retries
+        self.initial_noise_std = initial_noise_std
 
-        return data
+        if initial_noise_std is not None:
+            assert self.initial_noise_std.shape[0] == len(self.joints_names), (
+                "initial_noise_std must match n_robot_joints"
+            )
 
-    def pick_contact_candidates(self, i, target_link_name):
-        import pyvista as pv
+        joint_lims = torch.tensor(s_chain.get_joint_limits(), device=self.device, dtype=s_chain.dtype)
+        ik = pk.PseudoInverseIK(
+            s_chain,
+            max_iterations=50,
+            retry_configs=None,
+            num_retries=num_retries,
+            joint_limits=joint_lims.T,
+            early_stopping_any_converged=False,
+            early_stopping_no_improvement="any",
+            debug=False,
+            lr=0.2,
+            regularlization=regularlization,
+        )
+        return ik
 
-        plotter = pv.Plotter()
+    def create_dual_serial_chains(self):
+        # The urdf is only used for IK solving
+        self.urdf_chain = pk.build_chain_from_urdf(open(self.cfg.urdf_path).read()).to(
+            dtype=torch.float, device=self.device
+        )
 
-        target_link_tf_inv = self.current_status[target_link_name].inverse()  # base in target link frame
+        if self.urdf_chain.get_joint_parameter_names() != self.chain.get_joint_parameter_names():
+            raise ValueError("The joints in URDF and MJCF are inconsistent!")
 
-        for link_name in self.mesh:
-            v = self.current_status[link_name].transform_points(self.mesh[link_name]["vertices"])
-            if len(v.shape) == 3:
-                v = v[i]
-            # transform vertices to the target link frame
-            v = target_link_tf_inv.transform_points(v)
-            # v = v @ self.global_rotation[i].T + self.global_translation[i]
-            vertices = v.detach().cpu().numpy()
-            faces = self.mesh[link_name]["faces"].detach().cpu().numpy()
+        self.ra_s_chain, self.ra_s_indices = self.create_serial_chain("right_hand")
+        self.la_s_chain, self.la_s_indices = self.create_serial_chain("left_hand")
 
-            # Convert faces to PyVista format: prepend number of points per face
-            faces_flat = np.hstack([np.insert(f, 0, len(f)) for f in faces])
-            # Create PolyData mesh
-            mesh = pv.PolyData(vertices, faces_flat)
+    def create_dual_ik_solvers(
+        self,
+        num_retries=10,
+        regularlization=1e-3,
+        initial_noise_std: Optional[torch.tensor] = None,
+    ):
+        self.ra_ik = self.create_ik_solver(self.ra_s_chain, num_retries, regularlization, initial_noise_std)
+        self.la_ik = self.create_ik_solver(self.la_s_chain, num_retries, regularlization, initial_noise_std)
 
-            if link_name == target_link_name:
-                mesh = mesh.subdivide(3)  # more dense vertices
-                plotter.add_mesh(mesh, show_edges=True)
-                # plotter.add_points(mesh.points, color="white", point_size=5)
-            else:
-                plotter.add_mesh(mesh)
+    def solve_ik_batch(
+        self,
+        handedness,
+        matrix: torch.Tensor,
+        ref_configs: Optional[torch.Tensor] = None,
+        use_ref_as_init: bool = True,
+    ):
+        """
+        Solve a batch of inverse kinematics problems.
 
-        # Add axes at origin
-        plotter.add_mesh(pv.Arrow(start=(0, 0, 0), direction=(2, 0, 0), scale=0.02), color="r")  # X-axis
-        plotter.add_mesh(pv.Arrow(start=(0, 0, 0), direction=(0, 2, 0), scale=0.02), color="g")  # Y-axis
-        plotter.add_mesh(pv.Arrow(start=(0, 0, 0), direction=(0, 0, 2), scale=0.02), color="b")  # Z-axis
+        Args:
+            matrix (torch.Tensor): target poses of shape (B, 4, 4), defined in the world frame
+            ref_configs (Optional[torch.Tensor]): reference full joint configs (B, DOF), optional
 
-        plotter.add_text("Close the window to continue.", font_size=20, color="black", position="lower_left")
+        Returns:
+            Dict[str, torch.Tensor]: dictionary with keys:
+                - "q": (B, DOF) full joint configuration
+                - "success": (B, n_seeds) convergence flags
+                - "err_pos": (B, n_seeds) position error
+                - "err_rot": (B, n_seeds) rotation error
+        """
 
-        picked_points = []
+        s_chain = self.ra_s_chain if handedness == "right_hand" else self.la_s_chain
+        ik = self.ra_ik if handedness == "right_hand" else self.la_ik
 
-        def callback(point, event):
-            print("Picked point:", plotter.picked_point)
-            picked_points.append(plotter.picked_point.tolist())
+        B = matrix.shape[0]
+        serial_joint_names = s_chain.get_joint_parameter_names()
+        serial_indices = [self.joints_names.index(name) for name in serial_joint_names]
+        num_joints = len(self.joints_names)
+        joint_lims = torch.tensor(s_chain.get_joint_limits(), device=self.device)
 
-        plotter.enable_point_picking(callback=callback, use_picker=True, show_message=True)  # use_mesh -> use_picker
+        # Prepare full_q and serial_ref_configs if needed
+        noised_serial_ref_configs = None
+        if ref_configs is not None:
+            assert ref_configs.shape[0] == B, "ref_configs must match batch size"
+            full_q = ref_configs.clone()
+            serial_ref_configs = ref_configs[:, serial_indices]
+            serial_ref_configs = serial_ref_configs.unsqueeze(1).repeat(1, self.n_ik_retries, 1)
 
-        # Visualize
-        plotter.show()
+            if use_ref_as_init:
+                noise_std = (
+                    self.initial_noise_std[serial_indices].view(1, 1, -1) if self.initial_noise_std is not None else 0
+                )  # add some noises to the initial values
+                noised_serial_ref_configs = serial_ref_configs + torch.randn_like(serial_ref_configs) * noise_std
+                # clamp into the joint limits
+                joint_mins = joint_lims[0, :].view(1, 1, -1)  # shape (1, 1, D)
+                joint_maxs = joint_lims[1, :].view(1, 1, -1)  # shape (1, 1, D)
+                noised_serial_ref_configs = torch.clamp(noised_serial_ref_configs, min=joint_mins, max=joint_maxs)
+        else:
+            full_q = torch.zeros((B, num_joints), dtype=matrix.dtype, device=matrix.device)
+            # re-sample initial configs (default: uniform sampling)
+            ik.sample_configs(num_configs=self.n_ik_retries)
 
-        print(f"picked points: {picked_points}")
-        return picked_points
+        # Solve IK
+        goal_tf_in_world = pk.Transform3d(matrix=matrix, device=self.device)
+        goal_tf_in_base = self.tf_world_to_base(goal_tf_in_world)
+        sol = ik.solve(goal_tf_in_base, ref_configs=noised_serial_ref_configs)
+
+        # check if the solutions are within joint limits
+        within_lims = self.check_in_joint_limits(sol.solutions[sol.converged, :], joint_lims)
+        if not within_lims.all():
+            raise RuntimeError("Some converged IK solutions are out of joint limits.")
+
+        # Select best IK solution
+        if ref_configs is not None:
+            # Use reference config to find the closest solution (among successful ones)
+            ref_q = serial_ref_configs[:, 0:1, :]  # shape: (B, 1, D)
+            diff = sol.solutions - ref_q
+            dist = torch.norm(diff, dim=-1)  # (B, n_seeds)
+            dist[~sol.converged] = 1e6
+            best_idx = torch.argmin(dist, dim=1)  # (B,)
+        else:
+            # Use first converged solution (fallback if no ref config)
+            best_idx = torch.argmax(sol.converged.to(torch.int), dim=1)  # (B,)
+
+        batch_idx = torch.arange(B, device=matrix.device)
+        serial_q = sol.solutions[batch_idx, best_idx, :].to(matrix.dtype)  # (B, serial_dof)
+        full_q[:, serial_indices] = serial_q  # Fill in full joint vector
+
+        # return the best IK solution among the retries for each item
+        return {
+            "q": full_q,
+            "success": sol.converged[batch_idx, best_idx],
+            "err_pos": sol.err_pos[batch_idx, best_idx],
+            "err_rot": sol.err_rot[batch_idx, best_idx],
+        }
+
+    def tf_world_to_base(self, tf_in_w: pk.Transform3d):
+        """
+        Note: The current implementation assumes base == world.
+        """
+        return tf_in_w
+
+    def check_in_joint_limits(self, qpos: torch.Tensor, joint_lims: torch.Tensor):
+        """
+        Args:
+            qpos: shape (B, n_dof)
+            joint_lims: shape (2, n_dof)
+        """
+        lower = joint_lims[0]  # shape: (D,)
+        upper = joint_lims[1]  # shape: (D,)
+
+        # Reshape limits to match solution shape
+        while lower.dim() < qpos.dim():
+            lower = lower.unsqueeze(0)
+            upper = upper.unsqueeze(0)
+
+        # Check if each solution is within the limits
+        within_lower = qpos >= lower
+        within_upper = qpos <= upper
+        within_limits = within_lower & within_upper  # shape: (B, D) or (B, N, D)
+
+        # All joints in each solution must be within limits
+        is_valid = within_limits.all(dim=-1)  # shape: (B,) or (B, N)
+
+        return is_valid

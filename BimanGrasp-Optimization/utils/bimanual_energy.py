@@ -163,6 +163,8 @@ class PenetrationComputer:
         """
         Object surface points to hand meshes.
         """
+        raise NotImplementedError("Have not supported non-identical object poses.")
+
         object_scale = object_model.object_scale_tensor.flatten().unsqueeze(1).unsqueeze(2)
         object_surface_points = object_model.surface_points_tensor * object_scale
 

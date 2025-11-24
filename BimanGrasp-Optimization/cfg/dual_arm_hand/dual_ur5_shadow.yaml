@@ -1,0 +1,8 @@
+mjcf_path: mjcf/dual_ur5_shadow/dual_ur5_shadow.xml
+urdf_path: mjcf/dual_ur5_shadow/dual_ur5_shadow.urdf
+
+rh_base_link: "rh_palm"
+lh_base_link: "lh_palm"
+
+ra_ref_qpos: [2.355, -2.355, -1.57,  -0.785, 1.57, 2.355]
+la_ref_qpos: [-2.355, -0.785, 1.57, -2.355, -1.57, -2.355]

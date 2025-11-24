@@ -6,8 +6,9 @@ n_worker: 96
 
 defaults:
   - _self_
-  - hand: shadow2
   - task: 
+  - hand: shadow2
+  - dual_arm_hand: dual_ur5_shadow
 
 task_name: ${hydra:runtime.choices.task}
 hand_name: ${hydra:runtime.choices.hand}
@@ -93,8 +94,8 @@ model:
   n_surface_points: 2000 # surface points on each hand
   num_samples: 2000 # surface points on object
   size: "large" # object scale sample range
-  batch_size: 128 # 128
-  max_total_batch_size: 1024 # 1024
+  batch_size: 2 # 128
+  max_total_batch_size: 12 # 1024
   multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
   hand_sdf_tool: "torchsdf"
   object_sdf_tool: "torchsdf"

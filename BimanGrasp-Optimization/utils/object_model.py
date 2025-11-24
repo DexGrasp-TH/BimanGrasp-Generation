@@ -32,7 +32,7 @@ class ObjectModel:
         device: str = "cuda",
         size: str = None,
         bodex_format: bool = True,
-        sdf_tool = "torchsdf",
+        sdf_tool="torchsdf",
     ):
         """
         Initialize object model.
@@ -95,6 +95,15 @@ class ObjectModel:
 
         self.surface_points_tensor = []
 
+        # The default poses of objects are identity.
+        self.global_translation = torch.zeros((len(object_code_list) * self.batch_size_each, 3), device=self.device)
+        self.global_rotation = (
+            torch.eye(3)
+            .to(device=self.device)
+            .unsqueeze(0)
+            .repeat((len(object_code_list) * self.batch_size_each, 1, 1))
+        )
+
         dense_point_cloud = None
         for object_code in object_code_list:
             # Random scale selection for this object
@@ -112,7 +121,7 @@ class ObjectModel:
             # Prepare mesh data for SDF computation
             object_verts = torch.tensor(mesh.vertices, dtype=torch.float, device=self.device)
             object_faces = torch.tensor(mesh.faces, dtype=torch.long, device=self.device)
-            
+
             if self.sdf_tool == "kaolin":
                 object_face_verts = kaolin.ops.mesh.index_vertices_by_faces(object_verts.unsqueeze(0), object_faces)
                 object_face_normals = kaolin.ops.mesh.face_normals(object_face_verts, unit=True)
@@ -138,12 +147,15 @@ class ObjectModel:
 
         # Stack tensors for batch processing
         self.object_scale_tensor = torch.stack(self.object_scale_tensor, dim=0)
-        if self.num_samples > 0:
-            self.surface_points_tensor = torch.stack(self.surface_points_tensor, dim=0)
-            # Repeat for each batch item: (n_objects * batch_size_each, num_samples, 3)
-            self.surface_points_tensor = self.surface_points_tensor.repeat_interleave(self.batch_size_each, dim=0)
+        a = 1
 
-        return dense_point_cloud
+        # TODO: support object surface points
+        # if self.num_samples > 0:
+        #     self.surface_points_tensor = torch.stack(self.surface_points_tensor, dim=0)
+        #     # Repeat for each batch item: (n_objects * batch_size_each, num_samples, 3)
+        #     self.surface_points_tensor = self.surface_points_tensor.repeat_interleave(self.batch_size_each, dim=0)
+
+        # return dense_point_cloud
 
     def calculate_distance(self, x, with_closest_points=False):
         """
@@ -157,8 +169,10 @@ class ObjectModel:
             tuple: (distances, normals) or (distances, normals, closest_points)
         """
         _, n_points, _ = x.shape
-        x = x.reshape(-1, self.batch_size_each * n_points, 3)
+        # Transform the query points into the object local frame
+        x = (x - self.global_translation.unsqueeze(1)) @ self.global_rotation
 
+        x = x.reshape(-1, self.batch_size_each * n_points, 3)
         distances = []
         normals = []
         closest_points = []
@@ -176,9 +190,13 @@ class ObjectModel:
                 faces = self.object_faces_list[i]
                 face_normals = self.object_face_normals_list[i]
 
-                dis_squared, face_indices, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_scaled[i].unsqueeze(0), face_verts.unsqueeze(0))
+                dis_squared, face_indices, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(
+                    x_scaled[i].unsqueeze(0), face_verts.unsqueeze(0)
+                )
                 dis_squared = dis_squared.squeeze(0)  # square distances
-                dis_signs = kaolin.ops.mesh.check_sign(verts.unsqueeze(0), faces, x_scaled[i].unsqueeze(0))  # True if inside mesh
+                dis_signs = kaolin.ops.mesh.check_sign(
+                    verts.unsqueeze(0), faces, x_scaled[i].unsqueeze(0)
+                )  # True if inside mesh
                 dis_signs = torch.where(dis_signs, -1.0, 1.0).squeeze(0)
                 normal = face_normals[face_indices]
 
@@ -207,6 +225,10 @@ class ObjectModel:
             closest_points = (torch.stack(closest_points) * scale.unsqueeze(2)).reshape(-1, n_points, 3)
             return distances, normals, closest_points
 
+        # # DEBUG
+        # index = torch.argmax(distances[-1, :])
+        # print(f"index: {index}")
+
         return distances, normals
 
     def cal_distance(self, x, with_closest_points=False):
@@ -222,7 +244,7 @@ class ObjectModel:
         """
         return self.calculate_distance(x, with_closest_points)
 
-    def get_plotly_data(self, i: int, color: str = "lightgreen", opacity: float = 0.5, pose=None):
+    def get_plotly_data(self, i: int, color: str = "lightgreen", opacity: float = 0.5):
         """
         Generate Plotly 3D mesh data for visualization.
 
@@ -243,10 +265,10 @@ class ObjectModel:
         # Scale vertices
         vertices = mesh.vertices * model_scale
 
-        # Apply pose transformation if provided
-        if pose is not None:
-            pose = np.array(pose, dtype=np.float32)
-            vertices = vertices @ pose[:3, :3].T + pose[:3, 3]
+        # Apply pose transformation
+        rot = self.global_rotation[i, ...].detach().cpu().numpy()
+        trans = self.global_translation[i, ...].detach().cpu().numpy()
+        vertices = vertices @ rot.T + trans
 
         # Create Plotly mesh
         mesh_data = go.Mesh3d(
@@ -262,7 +284,7 @@ class ObjectModel:
 
         return [mesh_data]
 
-    def get_trimesh_data(self, i, rgba, pose=None):
+    def get_trimesh_data(self, i, rgba):
         model_index = i // self.batch_size_each
         batch_index = i % self.batch_size_each
         model_scale = self.object_scale_tensor[model_index, batch_index].detach().cpu().numpy()
@@ -271,10 +293,10 @@ class ObjectModel:
         # Scale vertices
         vertices = mesh.vertices * model_scale
 
-        # Apply pose transformation if provided
-        if pose is not None:
-            pose = np.array(pose, dtype=np.float32)
-            vertices = vertices @ pose[:3, :3].T + pose[:3, 3]
+        # Apply pose transformation
+        rot = self.global_rotation[i, ...].detach().cpu().numpy()
+        trans = self.global_translation[i, ...].detach().cpu().numpy()
+        vertices = vertices @ rot.T + trans
 
         mesh = tm.Trimesh(vertices=vertices, faces=mesh.faces, process=False)
         mesh.visual.vertex_colors = rgba

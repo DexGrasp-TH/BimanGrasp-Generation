@@ -342,6 +342,15 @@ def hand_pose_to_dict(hand_pose: torch.Tensor, joint_names: List[str]) -> Dict[s
     return qpos
 
 
+def qpos_to_dict(qpos, joint_names: List[str]) -> Dict[str, float]:
+    if isinstance(qpos, torch.Tensor):
+        qpos_cpu = qpos.detach().cpu().numpy()
+    else:
+        qpos_cpu = qpos
+    qpos_dict = dict(zip(joint_names, qpos_cpu.tolist()))
+    return qpos_dict
+
+
 def create_grasp_data(
     idx: int,
     object_model,
