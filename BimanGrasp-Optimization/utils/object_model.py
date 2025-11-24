@@ -157,6 +157,13 @@ class ObjectModel:
 
         # return dense_point_cloud
 
+    def set_parameters(self, poses):
+        """
+        Set global poses of the objects.
+        """
+        self.global_rotation = poses[:, :3, :3]
+        self.global_translation = poses[:, :3, 3]
+
     def calculate_distance(self, x, with_closest_points=False):
         """
         Calculate signed distance from points to object surfaces.

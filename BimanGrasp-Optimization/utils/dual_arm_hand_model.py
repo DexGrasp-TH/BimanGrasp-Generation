@@ -544,6 +544,27 @@ class DualArmHandModel:
 
         return data
 
+    def get_trimesh_data(self, i, rgba, pose=None):
+        if pose is not None:
+            pose = np.array(pose, dtype=np.float32)
+
+        data = []
+        for link_name in self.mesh:
+            v = self.current_status[link_name].transform_points(self.mesh[link_name]["vertices"])
+            if len(v.shape) == 3:
+                v = v[i]
+            v = v.detach().cpu()
+            f = self.mesh[link_name]["faces"].detach().cpu()
+            if pose is not None:
+                v = v @ pose[:3, :3].T + pose[:3, 3]
+
+            mesh = tm.Trimesh(vertices=v, faces=f, process=False)
+            mesh.visual.vertex_colors = rgba
+
+            data.append(mesh)
+
+        return data
+
     def create_serial_chain(
         self,
         handedness,

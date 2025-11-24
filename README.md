@@ -74,6 +74,15 @@ The TorchSDF cannot correctly process meshes with acute angles between adjacent 
 
 ### Grasp Synthesis
 
+```bash
+cd BimanGrasp-Optimization
+
+python main_batch.py name=xxx
+python main.py task=compute_three_poses name=xxx
+python main.py task=arm_filter name=xxx
+python main.py task=arm_visualize name=xx
+```
+
 
 ## Demo Visualization
 
