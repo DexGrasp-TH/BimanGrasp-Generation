@@ -12,7 +12,7 @@ from typing import List
 import json
 import copy
 
-from mr_utils.pytorch3d.rotation_conversions import euler_angles_to_matrix
+from mr_utils.pytorch3d.rotation_conversions import euler_angles_to_matrix, matrix_to_quaternion
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from utils.hand_model import HandModel
@@ -413,8 +413,9 @@ class GraspExperiment:
             save_dir = os.path.join(exp_path, self.cfg.task.save_dir)
 
             valid = valid.reshape(n_obj, n_samples_per_obj, 4)
-            transformed_obj_poses = (
-                transformed_obj_poses.reshape(n_obj, n_samples_per_obj, 4, 3, 4, 4).detach().cpu().numpy()
+            obj_pos, obj_quat = transformed_obj_poses[:, :3, 3], matrix_to_quaternion(transformed_obj_poses[:, :3, :3])
+            obj_poses = (
+                torch.cat([obj_pos, obj_quat], dim=-1).reshape(n_obj, n_samples_per_obj, 4, 3, 7).detach().cpu().numpy()
             )
             qpos = qpos.reshape(n_obj, n_samples_per_obj, 4, 3, -1).detach().cpu().numpy()
 
@@ -426,7 +427,7 @@ class GraspExperiment:
                             os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
                             d = {}
-                            d["obj_pose"] = transformed_obj_poses[i_obj, i_grasp, i_p, 0]
+                            d["obj_pose"] = obj_poses[i_obj, i_grasp, i_p, 0]  # 7d vector (x, y, z, qw, qx, qy, qz)
                             q = qpos[i_obj, i_grasp, i_p]
                             d["pregrasp_qpos"] = qpos_to_dict(q[0, :], self.dual_arm_hand_model.joints_names)
                             d["grasp_qpos"] = qpos_to_dict(q[1, :], self.dual_arm_hand_model.joints_names)
@@ -434,6 +435,9 @@ class GraspExperiment:
 
                             data_dict = copy.deepcopy(data_dict_lst_all_obj[i_obj][i_grasp])
                             data_dict["dual_arm_hand"] = d
+                            data_dict["obj_path"] = os.path.join(
+                                self.config.paths.data_root_path, object_code, "mesh", "simplified.obj"
+                            )
 
                             np.save(save_path, data_dict)
                             logging.info(f"Save filtered grasp data to {save_path}.")

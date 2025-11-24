@@ -17,6 +17,8 @@ import multiprocessing
 import trimesh
 from pathlib import Path
 
+from mr_utils.utils_calc import posQuat2Isometry3d, quatWXYZ2XYZW
+
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from utils.hand_model import HandModel
 from utils.object_model import ObjectModel
@@ -252,7 +254,8 @@ def save_grasp_images(params):
     data_dict = np.load(file_path, allow_pickle=True).item()
     grasp_qpos_dict = data_dict["dual_arm_hand"]["grasp_qpos"]
     obj_scale = data_dict["scale"]
-    obj_pose = data_dict["dual_arm_hand"]["obj_pose"]
+    obj_pose7d = data_dict["dual_arm_hand"]["obj_pose"]
+    obj_pose = posQuat2Isometry3d(obj_pose7d[:3], quatWXYZ2XYZW(obj_pose7d[3:]))
 
     object_model.object_scale_tensor[0] = obj_scale
     object_model.set_parameters(poses=torch.tensor(obj_pose, device=device).unsqueeze(0))
