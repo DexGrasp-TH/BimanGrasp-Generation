@@ -5,7 +5,9 @@ Modular energy computation system for bimanual grasp optimization.
 import torch
 import numpy as np
 from typing import Tuple, Optional
-from .config import EnergyConfig
+from omegaconf import DictConfig, OmegaConf
+
+# from .config import EnergyConfig
 from .bimanual_handler import BimanualPair, EnergyTerms
 from .hand_model import HandModel
 from .object_model import ObjectModel
@@ -147,7 +149,7 @@ class PenetrationComputer:
     Computes penetration-related energies (object penetration and self-penetration).
     """
 
-    def __init__(self, config: EnergyConfig, device="cuda"):
+    def __init__(self, config: DictConfig, device="cuda"):
         self.device = device
         self.pen_points = config.pen_points
 
@@ -270,9 +272,9 @@ class BimanualEnergyComputer:
     Main energy computer that combines all energy terms for bimanual grasp optimization.
     """
 
-    def __init__(self, config: EnergyConfig = None, device="cuda"):
+    def __init__(self, config: DictConfig = None, device="cuda"):
         self.device = device
-        self.config = config or EnergyConfig()
+        self.config = config
 
         # Initialize component computers
         self.force_closure_computer = ForceClosureComputer(device)  # Mingrui: not used ?
@@ -350,74 +352,74 @@ class BimanualEnergyComputer:
         )
 
 
-def cal_energy(
-    left_hand_model,
-    right_hand_model,
-    object_model,
-    w_dis=100.0,
-    w_pen=125.0,
-    w_spen=10.0,
-    w_joints=1.0,
-    w_vew=0.5,
-    verbose=False,
-    device="cuda",
-):
-    """
-    Backward compatibility wrapper - redirects to calculate_energy.
-    """
-    return calculate_energy(
-        left_hand_model, right_hand_model, object_model, w_dis, w_pen, w_spen, w_joints, w_vew, verbose, device
-    )
+# def cal_energy(
+#     left_hand_model,
+#     right_hand_model,
+#     object_model,
+#     w_dis=100.0,
+#     w_pen=125.0,
+#     w_spen=10.0,
+#     w_joints=1.0,
+#     w_vew=0.5,
+#     verbose=False,
+#     device="cuda",
+# ):
+#     """
+#     Backward compatibility wrapper - redirects to calculate_energy.
+#     """
+#     return calculate_energy(
+#         left_hand_model, right_hand_model, object_model, w_dis, w_pen, w_spen, w_joints, w_vew, verbose, device
+#     )
 
 
-def calculate_energy(
-    left_hand_model,
-    right_hand_model,
-    object_model,
-    w_dis=100.0,
-    w_pen=100.0,
-    w_spen=10.0,
-    w_joints=1.0,
-    w_vew=0.0,
-    verbose=False,
-    device="cuda",
-):
-    """
-    Backward compatibility wrapper for the new modular energy computation system.
+# def calculate_energy(
+#     left_hand_model,
+#     right_hand_model,
+#     object_model,
+#     w_dis=100.0,
+#     w_pen=100.0,
+#     w_spen=10.0,
+#     w_joints=1.0,
+#     w_vew=0.0,
+#     verbose=False,
+#     device="cuda",
+# ):
+#     """
+#     Backward compatibility wrapper for the new modular energy computation system.
 
-    This function maintains the same interface as the original calculate_energy function
-    but uses the new modular BimanualEnergyComputer internally.
+#     This function maintains the same interface as the original calculate_energy function
+#     but uses the new modular BimanualEnergyComputer internally.
 
-    Args:
-        left_hand_model, right_hand_model: Hand models
-        object_model: Object model
-        w_dis, w_pen, w_spen, w_joints, w_vew: Energy weights
-        verbose: Return individual energy terms if True
-        device: Compute device
+#     Args:
+#         left_hand_model, right_hand_model: Hand models
+#         object_model: Object model
+#         w_dis, w_pen, w_spen, w_joints, w_vew: Energy weights
+#         verbose: Return individual energy terms if True
+#         device: Compute device
 
-    Returns:
-        If verbose: (total_energy, energy_fc, energy_dis, energy_pen, energy_spen, energy_joints, energy_vew)
-        Otherwise: total_energy
-    """
-    # Create configuration with provided weights
-    energy_config = EnergyConfig(w_dis=w_dis, w_pen=w_pen, w_spen=w_spen, w_joints=w_joints, w_vew=w_vew)
+#     Returns:
+#         If verbose: (total_energy, energy_fc, energy_dis, energy_pen, energy_spen, energy_joints, energy_vew)
+#         Otherwise: total_energy
+#     """
+#     # Create configuration with provided weights
+#     energy_config = EnergyConfig(w_dis=w_dis, w_pen=w_pen, w_spen=w_spen, w_joints=w_joints, w_vew=w_vew)
 
-    # Create bimanual pair and energy computer
-    bimanual_pair = BimanualPair(left_hand_model, right_hand_model, device)
-    energy_computer = BimanualEnergyComputer(energy_config, device)
+#     # Create bimanual pair and energy computer
+#     bimanual_pair = BimanualPair(left_hand_model, right_hand_model, device)
+#     energy_computer = BimanualEnergyComputer(energy_config, device)
 
-    # Compute all energies
-    energy_terms = energy_computer.compute_all_energies(bimanual_pair, object_model, verbose=True)
+#     # Compute all energies
+#     energy_terms = energy_computer.compute_all_energies(bimanual_pair, object_model, verbose=True)
 
-    if verbose:
-        return (
-            energy_terms.total,
-            energy_terms.force_closure,
-            energy_terms.distance,
-            energy_terms.penetration,
-            energy_terms.self_penetration,
-            energy_terms.joint_limits,
-            energy_terms.wrench_volume,
-        )
-    else:
-        return energy_terms.total
+#     if verbose:
+#         return (
+#             energy_terms.total,
+#             energy_terms.force_closure,
+#             energy_terms.distance,
+#             energy_terms.penetration,
+#             energy_terms.self_penetration,
+#             energy_terms.joint_limits,
+#             energy_terms.wrench_volume,
+#         )
+#     else:
+#         return energy_terms.total

@@ -12,14 +12,9 @@ try:
 except ImportError:
     HAS_MEMORY_PROFILER = False
 
-import argparse
-import multiprocessing
 import numpy as np
 import torch
 from tqdm import tqdm
-import random
-import transforms3d
-import shutil
 from utils.hand_model import HandModel
 from utils.object_model import ObjectModel
 from utils.initializations import initialize_dual_hand
@@ -29,11 +24,10 @@ from utils.common import robust_compute_rotation_matrix_from_ortho6d
 from torch.multiprocessing import set_start_method
 import plotly.graph_objects as go
 from utils.common import Logger
-from utils.config import ExperimentConfig, create_config_from_args
+
 from utils.bimanual_handler import BimanualPair, save_grasp_results, EnergyTerms
 from utils.common import setup_device, set_random_seeds, ensure_directory
 from omegaconf import DictConfig, OmegaConf
-import hydra
 from typing import List
 import json
 
@@ -43,7 +37,10 @@ class GraspExperiment:
     Main experiment class for bimanual grasp generation.
     """
 
-    def __init__(self, config: ExperimentConfig):
+    def __init__(self, config: DictConfig):
+        # preprocess the config
+        config.task.initialization = OmegaConf.merge(config.task.initialization, config.hand.initialization)
+
         self.config = config
         self.device = None
         self.bimanual_pair = None
@@ -58,53 +55,51 @@ class GraspExperiment:
         # State tracking
         self.left_hand_pose_st = None
         self.right_hand_pose_st = None
+        self.object_code_list = None
 
     def setup_environment(self):
         """Setup device, random seeds, and environment variables."""
         self.device = setup_device(self.config.gpu)
         set_random_seeds(self.config.seed)
         np.seterr(all="raise")
-
         print(f"Using device: {self.device}")
 
     def setup_models(self):
         """Initialize hand and object models."""
         print("Setting up models...")
 
-        # Create right hand model
         right_hand_model = HandModel(
-            mjcf_path=self.config.paths.right_hand_mjcf,
-            contact_points_path=self.config.paths.right_contact_points,
-            penetration_points_path=self.config.paths.penetration_points,
+            handedness="right_hand",
+            mjcf_path=self.config.hand.paths.right_hand_mjcf,
+            contact_points_path=self.config.hand.paths.right_contact_points,
             device=self.device,
             n_surface_points=self.config.model.n_surface_points,
-            handedness="right_hand",
-            cfg=self.config.hand_params,
+            sdf_tool=self.config.model.hand_sdf_tool,
+            thumb_links=self.config.hand.hand_params.right_thumb_links,
         )
         left_hand_model = HandModel(
-            mjcf_path=self.config.paths.left_hand_mjcf,
-            contact_points_path=self.config.paths.left_contact_points,
-            penetration_points_path=self.config.paths.penetration_points,
+            handedness="left_hand",
+            mjcf_path=self.config.hand.paths.left_hand_mjcf,
+            contact_points_path=self.config.hand.paths.left_contact_points,
             device=self.device,
             n_surface_points=self.config.model.n_surface_points,
-            handedness="left_hand",
-            cfg=self.config.hand_params,
+            sdf_tool=self.config.model.hand_sdf_tool,
+            thumb_links=self.config.hand.hand_params.left_thumb_links,
         )
-
-        # Create object model
         self.object_model = ObjectModel(
             data_root_path=self.config.paths.data_root_path,
             batch_size_each=self.config.model.batch_size,
             num_samples=self.config.model.num_samples,
             device=self.device,
             size=self.config.model.size,
+            sdf_tool=self.config.model.object_sdf_tool,
+            bodex_format=True,
         )
-        # self.object_model.initialize(self.config.object_code_list)
         self.object_model.initialize(self.object_code_list)
 
         # Initialize dual hands
         left_hand_model, right_hand_model = initialize_dual_hand(
-            right_hand_model, left_hand_model, self.object_model, self.config.initialization
+            right_hand_model, left_hand_model, self.object_model, self.config.task.initialization
         )
         self.bimanual_pair = BimanualPair(left_hand_model, right_hand_model, self.device)
 
@@ -114,7 +109,6 @@ class GraspExperiment:
 
         print(f"Left hand contact candidates: {left_hand_model.n_contact_candidates}")
         print(f"Right hand contact candidates: {right_hand_model.n_contact_candidates}")
-        print(f"Total batch size: {self.config.total_batch_size}")
 
     def setup_optimization(self):
         """Initialize optimizer and energy computer."""
@@ -126,7 +120,7 @@ class GraspExperiment:
         self.optimizer = MALAOptimizer(
             self.bimanual_pair.left,
             self.bimanual_pair.right,
-            config=self.config.optimizer,
+            config=self.config.task.optimizer,
             device=self.device,
             total_batch_size=len(self.object_code_list) * self.config.model.batch_size,
         )
@@ -135,24 +129,23 @@ class GraspExperiment:
         """Setup experiment logging and result directories."""
 
         # Create directories
-        logs_path = self.config.paths.get_experiment_logs_path(self.config.name)
-        results_path = self.config.paths.get_experiment_results_path(self.config.name)
-
-        ensure_directory(logs_path, clean=False)
-        ensure_directory(results_path, clean=False)
+        self.logs_path = os.path.join(self.config.paths.experiments_base, self.config.name, "logs")
+        self.results_path = os.path.join(self.config.paths.experiments_base, self.config.name, "results")
+        ensure_directory(self.logs_path, clean=False)
+        ensure_directory(self.results_path, clean=False)
 
         # Create logger
         self.logger = Logger(
-            log_dir=logs_path,
+            log_dir=self.logs_path,
             thres_fc=self.config.energy.thres_fc,
             thres_dis=self.config.energy.thres_dis,
             thres_pen=self.config.energy.thres_pen,
         )
 
         # Save experiment configuration
-        config_path = os.path.join(results_path, "config.txt")
+        config_path = os.path.join(self.results_path, "config.txt")
         with open(config_path, "w") as f:
-            f.write(str(self.config))
+            f.write(OmegaConf.to_yaml(self.config))
 
     def run_optimization(self):
         """Run the optimization loop."""
@@ -175,10 +168,8 @@ class GraspExperiment:
             show=False,
         )
 
-        results_path = self.config.paths.get_experiment_results_path(self.config.name)
-
         # Main optimization loop
-        for step in tqdm(range(1, self.config.optimizer.num_iterations + 1), desc="optimizing", miniters=1):
+        for step in tqdm(range(1, self.config.task.optimizer.num_iterations + 1), desc="optimizing", miniters=1):
             # MALA proposal step with Langevin dynamics
             step_size = self.optimizer.langevin_proposal()
 
@@ -217,16 +208,15 @@ class GraspExperiment:
                     show=False,
                 )
 
-                if (step + 1) % self.config.model.intermediate_save_step == 0:
-                    self.save_intermediate_results(step=step + 1, energy_terms=energy_terms)
+                if (step) % self.config.task.optimizer.intermediate_save_step == 0:
+                    self.save_intermediate_results(step=step, energy_terms=energy_terms)
 
         self.profiler.disable()
         return energy_terms
 
     def save_intermediate_results(self, step: int, energy_terms: EnergyTerms):
         """Save intermediate results during optimization."""
-        results_path = self.config.paths.get_experiment_results_path(self.config.name)
-        results_path = os.path.join(results_path, "intermediate")
+        results_path = os.path.join(self.results_path, "intermediate")
         os.makedirs(results_path, exist_ok=True)
 
         save_grasp_results(
@@ -244,8 +234,8 @@ class GraspExperiment:
     def save_final_results(self, energy_terms: EnergyTerms):
         """Save final optimization results."""
         print("Saving final results...")
-
-        results_path = self.config.paths.get_experiment_results_path(self.config.name)
+        results_path = os.path.join(self.results_path, "final")
+        os.makedirs(results_path, exist_ok=True)
 
         save_grasp_results(
             results_path,
@@ -277,7 +267,7 @@ class GraspExperiment:
         """Run the complete experiment pipeline."""
         print(f"Starting experiment: {self.config.name}")
 
-        self.object_code_list = object_code_list
+        self.object_code_list = object_code_list  # objects in this batch
 
         # Setup pipeline
         self.setup_environment()
@@ -298,73 +288,24 @@ class GraspExperiment:
         return final_energy_terms
 
 
-def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
-    """Convert a Hydra DictConfig to ExperimentConfig dataclass."""
-    exp = ExperimentConfig()
-
-    # Top level simple fields
-    for key in ("name", "seed", "gpu"):
-        if key in cfg:
-            setattr(exp, key, cfg.get(key))
-
-    # Object code list (keep as python list)
-    if "object_code_list" in cfg:
-        if cfg.object_code_list:
-            exp.object_code_list = OmegaConf.to_object(cfg.object_code_list)
-        else:
-            with open(cfg.object_code_path, "r") as f:
-                exp.object_code_list = sorted(json.load(f))
-
-    # Helper to apply nested dict to dataclass-like object
-    def apply_section(section_name, target_obj):
-        if section_name in cfg:
-            sec = cfg.get(section_name)
-            for k, v in sec.items():
-                if hasattr(target_obj, k):
-                    # convert lists/dicts to native Python
-                    val = OmegaConf.to_object(v) if isinstance(v, (dict, list)) else v
-                    setattr(target_obj, k, val)
-
-    apply_section("hand_params", exp.hand_params)
-    apply_section("paths", exp.paths)
-    apply_section("energy", exp.energy)
-    apply_section("optimizer", exp.optimizer)
-    apply_section("initialization", exp.initialization)
-    apply_section("model", exp.model)
-
-    return exp
-
-
-@hydra.main(config_path="cfg", config_name="base", version_base=None)  # must use version_base=None for compatibility
-def main(cfg: DictConfig):
-    """Hydra entrypoint. Builds ExperimentConfig from config.yaml and runs the experiment.
-
-    The optional `args` parameter is accepted for compatibility but not required or used by
-    the function. This allows callers to pass a second positional argument without breaking
-    the Hydra-decorated entrypoint.
+def task_synthesize(config: DictConfig):
     """
-
-    # merge cfg.hand.paths into cfg.paths
-    cfg.paths = OmegaConf.merge(cfg.paths, cfg.hand.paths)
-    cfg.hand_params = OmegaConf.merge(cfg.hand_params, cfg.hand.hand_params)
-    cfg.initialization = OmegaConf.merge(cfg.initialization, cfg.hand.initialization)
-
-    # Convert to ExperimentConfig dataclass
-    config = experiment_config_from_dict(cfg)
+    Synthesizing bimanual grasps using the the DexGraspNet-pipeline method.
+    This program runs on a single GPU.
+    """
 
     # Print configuration summary
     print("=== Experiment Configuration ===")
     print(f"Name: {config.name}")
     print(f"Objects: {len(config.object_code_list)} objects")
     print(f"Batch size: {config.model.batch_size} per object")
-    print(f"Total batch: {config.total_batch_size}")
-    print(f"iterations: {config.optimizer.num_iterations}")
+    print(f"iterations: {config.task.optimizer.num_iterations}")
     print(
         f"Energy weights: dis={config.energy.w_dis}, pen={config.energy.w_pen}, vew={config.energy.w_vew}",
         f", joint={config.energy.w_joints}, spen={config.energy.w_spen}",
     )
-    print(f"temperature: {config.optimizer.initial_temperature}")
-    print(f"Langevin noise: {config.optimizer.langevin_noise_factor}")
+    print(f"temperature: {config.task.optimizer.initial_temperature}")
+    print(f"Langevin noise: {config.task.optimizer.langevin_noise_factor}")
     print("=" * 45)
 
     # Run experiment
@@ -379,7 +320,13 @@ def main(cfg: DictConfig):
         """
         return [obj_list[i : i + max_object_per_batch] for i in range(0, len(obj_list), max_object_per_batch)]
 
-    all_object_code_list = config.object_code_list
+    if "object_code_list" in config:
+        object_code_list = OmegaConf.to_object(config.object_code_list)
+    else:
+        with open(config.object_code_path, "r") as f:
+            object_code_list = sorted(json.load(f))
+
+    all_object_code_list = config.task.object_code_list
     batched_object_code_list = split_by_max_size(all_object_code_list, max_object_per_batch)
 
     for i_batch, object_code_list in enumerate(batched_object_code_list):
@@ -388,6 +335,4 @@ def main(cfg: DictConfig):
         print("object_code_list: ", object_code_list)
         final_energy_terms = experiment.run_full_experiment(object_code_list)
 
-
-if __name__ == "__main__":
-    main()
+    return

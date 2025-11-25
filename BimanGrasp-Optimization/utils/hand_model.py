@@ -14,15 +14,10 @@ import pytorch3d.ops
 import plotly.graph_objects as go
 import logging
 import copy
-import re
-
-from mr_utils.utils_calc import sciR, transformPositions, posQuat2Isometry3d, quatWXYZ2XYZW
 from pytorch3d.transforms.rotation_conversions import quaternion_to_matrix
 
-try:
-    from utils.common import robust_compute_rotation_matrix_from_ortho6d
-except Exception:
-    from common import robust_compute_rotation_matrix_from_ortho6d
+from mr_utils.utils_calc import posQuat2Isometry3d, quatWXYZ2XYZW
+from .common import robust_compute_rotation_matrix_from_ortho6d
 
 
 def load_mujoco_model(mjcf_path, load_mode="xml_string"):
@@ -135,46 +130,21 @@ def extract_trimesh_from_mjcf(model, use_chamfer_box=True):
 class HandModel:
     def __init__(
         self,
+        handedness,
         mjcf_path,
         contact_points_path,
-        penetration_points_path,
         n_surface_points=0,
         device="cpu",
-        handedness=None,
         sdf_tool="torchsdf",
-        cfg=None,
+        thumb_links=None,
     ):
-        """
-        Create a Hand Model for a MJCF robot
-
-        Parameters
-        ----------
-        mjcf_path: str
-            path to mjcf file
-        contact_points_path: str
-            path to hand-selected contact candidates
-        penetration_points_path: str
-            path to hand-selected penetration keypoints
-        n_surface_points: int
-            number of points to sample from surface of hand, use fps
-        device: str | torch.Devicet
-            device for torch tensors
-        """
-
-        """
-        We need different joint initialization for left hand and right hand
-
-        Parameter
-        ----------
-        handedness: str
-            initialize left or right hand
-        """
-
-        self.device = device
         self.handedness = handedness
+        self.device = device
         self.n_surface_points = n_surface_points
         self.sdf_tool = sdf_tool
-        self.cfg = cfg  # hand params
+        self.mjcf_path = mjcf_path
+        self.contact_points_path = contact_points_path
+        self.thumb_links = thumb_links
 
         self.logger = logging.getLogger(__name__)
 
@@ -189,11 +159,7 @@ class HandModel:
         # load mujoco model
         self.mj_model = load_mujoco_model(mjcf_path, load_mode="xml_string")
 
-        self._build_mesh(
-            mjcf_path,
-            contact_points_path,
-            penetration_points_path,
-        )
+        self._build_mesh()
         self._build_link_collision_mask()
 
         # parameters
@@ -206,20 +172,13 @@ class HandModel:
         self.surface_points_in_base = None
         self.surface_point = None
 
-    def _build_mesh(
-        self,
-        mjcf_path,
-        contact_points_path,
-        penetration_points_path,
-    ):
+    def _build_mesh(self):
         """
         Build mesh informations, contact point candidates, and penetration points for each link.
         """
         # load contact points and penetration points
+        contact_points_path = self.contact_points_path
         contact_points = json.load(open(contact_points_path, "r")) if contact_points_path is not None else None
-        penetration_points = (
-            json.load(open(penetration_points_path, "r")) if penetration_points_path is not None else None
-        )
 
         # build mesh
         self.mesh = {}
@@ -281,18 +240,12 @@ class HandModel:
                 if contact_points is not None
                 else None
             )
-            penetration_keypoints = (
-                torch.tensor(penetration_points[link_name], dtype=torch.float32, device=self.device).reshape(-1, 3)
-                if penetration_points is not None
-                else None
-            )
 
             self.mesh[link_name].update(
                 {
                     "vertices": link_vertices,
                     "faces": link_faces,
                     "contact_candidates": contact_candidates,
-                    "penetration_keypoints": penetration_keypoints,
                 }
             )
             areas[link_name] = tm.Trimesh(link_vertices.cpu().numpy(), link_faces.cpu().numpy()).area.item()
@@ -346,31 +299,18 @@ class HandModel:
         self.n_contact_candidates = self.contact_candidates.shape[0]
 
         # contact candidates on thumb finger
-        self.contact_candi_indices = torch.arange(self.n_contact_candidates, device=self.device)
-        self.thumb_contact_candi_indices = []
-        thumb_links = self.cfg.right_thumb_links if self.handedness == "right_hand" else self.cfg.left_thumb_links
-        for link_name in thumb_links:
-            link_index = self.link_name_to_link_index[link_name]
-            self.thumb_contact_candi_indices.append(torch.where(self.global_index_to_link_index == link_index)[0])
-        self.thumb_contact_candi_indices = torch.cat(self.thumb_contact_candi_indices, dim=0)
-        self.non_thumb_contact_candi_indices = self.contact_candi_indices[
-            ~torch.isin(self.contact_candi_indices, self.thumb_contact_candi_indices)
-        ]
-
-        if self.mesh[link_name]["penetration_keypoints"] is not None:
-            self.penetration_keypoints = [self.mesh[link_name]["penetration_keypoints"] for link_name in self.mesh]
-            self.global_index_to_link_index_penetration = sum(
-                [
-                    [i] * len(penetration_keypoints)
-                    for i, penetration_keypoints in enumerate(self.penetration_keypoints)
-                ],
-                [],
-            )
-            self.penetration_keypoints = torch.cat(self.penetration_keypoints, dim=0)
-            self.global_index_to_link_index_penetration = torch.tensor(
-                self.global_index_to_link_index_penetration, dtype=torch.long, device=self.device
-            )
-            self.n_keypoints = self.penetration_keypoints.shape[0]
+        if self.thumb_links:
+            self.contact_candi_indices = torch.arange(self.n_contact_candidates, device=self.device)
+            self.thumb_contact_candi_indices = []
+            for link_name in self.thumb_links:
+                link_index = self.link_name_to_link_index[link_name]
+                self.thumb_contact_candi_indices.append(torch.where(self.global_index_to_link_index == link_index)[0])
+            self.thumb_contact_candi_indices = torch.cat(self.thumb_contact_candi_indices, dim=0)
+            self.non_thumb_contact_candi_indices = self.contact_candi_indices[
+                ~torch.isin(self.contact_candi_indices, self.thumb_contact_candi_indices)
+            ]
+        else:
+            logging.warning("Have not specified thumb links of the hand.")
 
     def _build_link_collision_mask(self):
         """

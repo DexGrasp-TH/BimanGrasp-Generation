@@ -1,2 +1,8 @@
+debug: False
+debug_visualize: False
+
+source_dir: "results/final"
+save_dir: "three_poses"
+
 spread_joint_magnitude: -0.1 # smaller -> open
 squeeze_joint_magnitude: 0.1 # larger -> close

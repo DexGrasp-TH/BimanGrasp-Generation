@@ -1,0 +1,42 @@
+initialization:
+  convex_expand_dis: 0.1
+  distance_lower: 0.05
+  distance_upper: 0.1
+  theta_lower:  -0.5235987755982988   # -pi/6
+  theta_upper: 0.5235987755982988    # pi/6
+  jitter_strength: 0.05
+  num_contacts: 4
+  keep_thumb_contact: True
+
+  left_hand_joint_mu:
+  right_hand_joint_mu: 
+  left_hand_rot:
+  left_hand_trans:
+  right_hand_rot:
+  right_hand_trans:
+
+optimizer:
+  switch_possibility: 0.5
+  starting_temperature: 18
+  initial_temperature: ${task.optimizer.starting_temperature}
+  temperature_decay: 0.95
+  cooling_schedule: ${task.optimizer.temperature_decay}
+  annealing_period: 30
+  step_size: 0.005
+  stepsize_period: 50
+  momentum: 0.98
+  preconditioning_decay: ${task.optimizer.momentum}
+  langevin_noise_factor: 0.1
+
+  joint_limit_clamp: True
+  individual_ema_grad: True
+  mean_ema_grad_weight: 1.0
+  keep_thumb_contact: True
+
+  num_iterations: 10
+  intermediate_save_step: 5
+
+  
+
+  
+

@@ -1,7 +1,8 @@
 """\nMetropolis-Adjusted Langevin Algorithm (MALA) with RMSProp preconditioning for bimanual optimization.\n"""
 
 import torch
-from .config import OptimizerConfig
+
+# from .config import OptimizerConfig
 from .bimanual_handler import BimanualPair, HandState
 from .common import MovingAverage
 
@@ -11,7 +12,7 @@ class MALAOptimizer:
         self,
         left_hand_model,
         right_hand_model,
-        config: OptimizerConfig = None,
+        config=None,
         switch_possibility=0.5,
         initial_temperature=18,
         cooling_schedule=0.95,

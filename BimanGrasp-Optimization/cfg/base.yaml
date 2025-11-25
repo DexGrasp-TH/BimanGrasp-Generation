@@ -1,4 +1,3 @@
-# Generated from utils/config.py defaults
 name: "debug"
 seed: 1
 gpu: "0"
@@ -13,37 +12,20 @@ defaults:
 task_name: ${hydra:runtime.choices.task}
 hand_name: ${hydra:runtime.choices.hand}
 
-object_code_path: "../data/object/DGN_2k/valid_split/all.json"
-# object_code_list: 
-object_code_list:
-  - "ddg_gd_box_poisson_005"
-  - "core_bottle_fa452996a220dd49257c84a0e95a18b0"
-  - "sem_Book_20dec770602a8ac2331999dc8823fe0d"
-  - "sem_Snowman_bf2384e841ca61805b2ecd212557fda0"
-  - "sem_CerealBox_fc6667707faff16544608b3255ca1886"
-  - "mujoco_Hasbro_Monopoly_Hotels_Game"
-
-hand_params:
-  name:
-  right_thumb_links:
-  left_thumb_links:
-  right_tip_links:
-  left_tip_links:
-  right_squeeze_joints:
-  left_squeeze_joints:
-
 paths:
-  right_hand_mjcf: 
-  right_hand_vis_mjcf:
-  left_hand_mjcf: 
-  left_hand_vis_mjcf:
-  mesh_path: 
-  right_contact_points: 
-  left_contact_points: 
-  penetration_points:
   data_root_path: "../data/object/DGN_2k/processed_data"
   experiments_base: "../data/experiments"
   results_base: "data/graspdata"
+
+model:
+  n_surface_points: 2000 # surface points on each hand
+  num_samples: 2000 # surface points on object
+  size: "large" # object scale sample range
+  batch_size: 128 # 128, n_grasps_per_object
+  max_total_batch_size: 2048 # 1024
+  multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
+  hand_sdf_tool: "torchsdf"
+  object_sdf_tool: "torchsdf"
 
 energy:
   w_dis: 100.0
@@ -58,47 +40,15 @@ energy:
   joint_limit_func: "soft_quadratic" # 'quadratic', 'soft_quadratic'
   joint_limit_margin: 0.1 # fraction of joint range that serves as soft zone.
 
-optimizer:
-  switch_possibility: 0.5
-  starting_temperature: 18
-  temperature_decay: 0.95
-  annealing_period: 30
-  step_size: 0.005
-  stepsize_period: 50
-  momentum: 0.98
-  num_iterations: 6000
-  joint_limit_clamp: True
-  individual_ema_grad: True
-  mean_ema_grad_weight: 1.0
-  keep_thumb_contact: True
-
-initialization:
-  convex_expand_dis: 0.1 # 0.2
-  distance_lower: 0.05 # 0.2
-  distance_upper: 0.1 # 0.3
-  theta_lower:  -0.5235987755982988   # -pi/6
-  theta_upper: 0.5235987755982988    # pi/6
-  jitter_strength: 0.05 # 0.1
-  num_contacts: 4
-
-  left_hand_joint_mu:
-  right_hand_joint_mu:
-  left_hand_rot:
-  left_hand_trans:
-  right_hand_rot:
-  right_hand_trans:
-
-  keep_thumb_contact: True
-
-model:
-  n_surface_points: 2000 # surface points on each hand
-  num_samples: 2000 # surface points on object
-  size: "large" # object scale sample range
-  batch_size: 128 # 128
-  max_total_batch_size: 1024 # 1024
-  multi_gpu_lst: [0, 1, 2, 3, 4, 5, 6, 7]
-  hand_sdf_tool: "torchsdf"
-  object_sdf_tool: "torchsdf"
-  intermediate_save_step: 500
+object_code_path: "../data/object/DGN_2k/valid_split/all.json"
+# object_code_list: 
+object_code_list:
+  - "ddg_gd_box_poisson_005"
+  - "core_bottle_fa452996a220dd49257c84a0e95a18b0"
+  - "sem_Book_20dec770602a8ac2331999dc8823fe0d"
+  - "sem_Snowman_bf2384e841ca61805b2ecd212557fda0"
+  - "sem_CerealBox_fc6667707faff16544608b3255ca1886"
+  - "mujoco_Hasbro_Monopoly_Hotels_Game"
+  
 
 

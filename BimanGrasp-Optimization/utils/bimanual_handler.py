@@ -5,8 +5,7 @@ import os
 import numpy as np
 import transforms3d
 
-from .config import TRANSLATION_NAMES, ROTATION_NAMES
-from .common import robust_compute_rotation_matrix_from_ortho6d
+from .common import robust_compute_rotation_matrix_from_ortho6d, TRANSLATION_NAMES, ROTATION_NAMES
 
 
 @dataclass
@@ -459,7 +458,10 @@ def save_grasp_results(
 
 # --- Utility to build hand pose tensor ---
 def build_hand_pose(qpos, translation_names, rot_names, joint_names, device):
-    """Build a torch tensor for hand pose given qpos dict."""
+    """
+    Build a torch tensor for hand pose given qpos dict.
+    Do not support batch operation.
+    """
     rot = np.array(transforms3d.euler.euler2mat(*[qpos[name] for name in rot_names]))
     rot = rot[:, :2].T.ravel().tolist()  # flatten first two rotation columns
     hand_pose = torch.tensor(

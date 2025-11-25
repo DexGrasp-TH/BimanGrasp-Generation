@@ -17,51 +17,11 @@ from mr_utils.pytorch3d.rotation_conversions import euler_angles_to_matrix, matr
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from utils.hand_model import HandModel
 from utils.object_model import ObjectModel
-from utils.initializations import initialize_dual_hand
-from utils.bimanual_energy import calculate_energy, cal_energy, BimanualEnergyComputer
+from utils.bimanual_energy import BimanualEnergyComputer
 from utils.common import robust_compute_rotation_matrix_from_ortho6d
-from utils.common import Logger
-from utils.config import ExperimentConfig, create_config_from_args, TRANSLATION_NAMES, ROTATION_NAMES
 from utils.bimanual_handler import BimanualPair, build_bimanual_three_poses, qpos_to_dict
-from utils.common import setup_device, set_random_seeds, ensure_directory
-from utils.dual_arm_hand_model import DualArmHandModel, robust_compute_rotation_matrix_from_ortho6d
-
-
-def experiment_config_from_dict(cfg: DictConfig) -> ExperimentConfig:
-    """Convert a Hydra DictConfig to ExperimentConfig dataclass."""
-    exp = ExperimentConfig()
-
-    # Top level simple fields
-    for key in ("name", "seed", "gpu"):
-        if key in cfg:
-            setattr(exp, key, cfg.get(key))
-
-    # Object code list (keep as python list)
-    if "object_code_list" in cfg:
-        if cfg.object_code_list:
-            exp.object_code_list = OmegaConf.to_object(cfg.object_code_list)
-        else:
-            with open(cfg.object_code_path, "r") as f:
-                exp.object_code_list = sorted(json.load(f))
-
-    # Helper to apply nested dict to dataclass-like object
-    def apply_section(section_name, target_obj):
-        if section_name in cfg:
-            sec = cfg.get(section_name)
-            for k, v in sec.items():
-                if hasattr(target_obj, k):
-                    # convert lists/dicts to native Python
-                    val = OmegaConf.to_object(v) if isinstance(v, (dict, list)) else v
-                    setattr(target_obj, k, val)
-
-    apply_section("hand_params", exp.hand_params)
-    apply_section("paths", exp.paths)
-    apply_section("energy", exp.energy)
-    apply_section("optimizer", exp.optimizer)
-    apply_section("initialization", exp.initialization)
-    apply_section("model", exp.model)
-
-    return exp
+from utils.common import setup_device, set_random_seeds, TRANSLATION_NAMES, ROTATION_NAMES
+from utils.dual_arm_hand_model import DualArmHandModel
 
 
 def poses9d_to_matrix(poses):
@@ -89,29 +49,27 @@ def pos_rot_to_matrix(pos, rot):
     return matrix
 
 
+def split_by_max_size(obj_list, max_object_per_batch):
+    """
+    Split obj_list into batches with at most max_object_per_batch items each.
+    """
+    return [obj_list[i : i + max_object_per_batch] for i in range(0, len(obj_list), max_object_per_batch)]
+
+
 class GraspExperiment:
     """
     Main experiment class for bimanual grasp generation.
     """
 
     def __init__(self, cfg: DictConfig):
-        self.cfg: DictConfig = cfg  # hydra
+        self.config: DictConfig = cfg  # hydra
         self.device = None
         self.bimanual_pair = None
         self.object_model = None
-        self.optimizer = None
         self.energy_computer = None
-        self.logger = None
-
-        # Convert to ExperimentConfig dataclass
-        self.config: ExperimentConfig = experiment_config_from_dict(cfg)
 
         # Profiling
         self.profiler = cProfile.Profile()
-
-        # State tracking
-        self.left_hand_pose_st = None
-        self.right_hand_pose_st = None
 
     def setup_environment(self):
         """Setup device, random seeds, and environment variables."""
@@ -125,44 +83,46 @@ class GraspExperiment:
         """Initialize hand and object models."""
         print("Setting up models...")
 
-        # Create right hand model
-        right_hand_model = HandModel(
-            mjcf_path=self.config.paths.right_hand_mjcf,
-            contact_points_path=self.config.paths.right_contact_points,
-            penetration_points_path=self.config.paths.penetration_points,
-            device=self.device,
-            n_surface_points=self.config.model.n_surface_points,
-            handedness="right_hand",
-            cfg=self.config.hand_params,
-        )
-        left_hand_model = HandModel(
-            mjcf_path=self.config.paths.left_hand_mjcf,
-            contact_points_path=self.config.paths.left_contact_points,
-            penetration_points_path=self.config.paths.penetration_points,
-            device=self.device,
-            n_surface_points=self.config.model.n_surface_points,
-            handedness="left_hand",
-            cfg=self.config.hand_params,
-        )
-
-        # Create object model
         self.object_model = ObjectModel(
             data_root_path=self.config.paths.data_root_path,
             batch_size_each=self.config.model.batch_size * 3 * 4,  # (3 grasp types) * (4 object poses)
             num_samples=self.config.model.num_samples,
             device=self.device,
             size=self.config.model.size,
+            sdf_tool=self.config.model.object_sdf_tool,
+            bodex_format=True,
         )
 
+        right_hand_model = HandModel(
+            handedness="right_hand",
+            mjcf_path=self.config.hand.paths.right_hand_mjcf,
+            contact_points_path=self.config.hand.paths.right_contact_points,
+            device=self.device,
+            n_surface_points=self.config.model.n_surface_points,
+            sdf_tool=self.config.model.hand_sdf_tool,
+            thumb_links=self.config.hand.hand_params.right_thumb_links,
+        )
+        left_hand_model = HandModel(
+            handedness="left_hand",
+            mjcf_path=self.config.hand.paths.left_hand_mjcf,
+            contact_points_path=self.config.hand.paths.left_contact_points,
+            device=self.device,
+            n_surface_points=self.config.model.n_surface_points,
+            sdf_tool=self.config.model.hand_sdf_tool,
+            thumb_links=self.config.hand.hand_params.left_thumb_links,
+        )
         self.bimanual_pair = BimanualPair(left_hand_model, right_hand_model, self.device)
 
         self.dual_arm_hand_model = DualArmHandModel(
-            n_surface_points=self.cfg.model.n_surface_points,
+            n_surface_points=self.config.model.n_surface_points,
             device=self.device,
-            cfg=self.cfg.dual_arm_hand,
+            cfg=self.config.dual_arm_hand,
         )
-        self.dual_arm_hand_model.create_dual_serial_chains()
-        self.dual_arm_hand_model.create_dual_ik_solvers(num_retries=20, regularlization=1e-3)
+        self.dual_arm_hand_model.create_dual_serial_chains()  # for IK solving
+        self.dual_arm_hand_model.create_dual_ik_solvers(
+            num_retries=self.config.task.ik.num_retries,
+            regularlization=self.config.task.ik.regularlization,
+        )
 
     def setup_energy(self):
         """Initialize optimizer and energy computer."""
@@ -177,30 +137,25 @@ class GraspExperiment:
         """
 
         exp_path = os.path.join(self.config.paths.experiments_base, self.config.name)
-        result_path = os.path.join(exp_path, self.cfg.task.source_dir)
+        result_path = os.path.join(exp_path, self.config.task.source_dir)
+
+        ############################ Object list preparation ############################
 
         # split all objects into batches
         n_samples_per_obj = self.config.model.batch_size
         max_object_per_batch = self.config.model.max_total_batch_size // n_samples_per_obj
-
-        def split_by_max_size(obj_list, max_object_per_batch):
-            """
-            Split obj_list into batches with at most max_object_per_batch items each.
-            """
-            return [obj_list[i : i + max_object_per_batch] for i in range(0, len(obj_list), max_object_per_batch)]
-
         batched_object_code_list = split_by_max_size(all_object_code_list, max_object_per_batch)
 
-        # Pre-calculated values
+        ############################ Pre-calculated values ############################
+
         right_joint_names = self.bimanual_pair.right.get_joint_names()
         left_joint_names = self.bimanual_pair.left.get_joint_names()
-
-        ra_ref_qpos = torch.tensor(self.cfg.dual_arm_hand.ra_ref_qpos, device=self.device).unsqueeze(0)
-        la_ref_qpos = torch.tensor(self.cfg.dual_arm_hand.la_ref_qpos, device=self.device).unsqueeze(0)
+        ra_ref_qpos = torch.tensor(self.config.dual_arm_hand.ra_ref_qpos, device=self.device).unsqueeze(0)
+        la_ref_qpos = torch.tensor(self.config.dual_arm_hand.la_ref_qpos, device=self.device).unsqueeze(0)
 
         obj_transforms = []
-        trans = [0.5, 0.0, -0.2]
-        for z_rot in [-1.57, 0, 1.57, 3.14]:
+        trans = self.config.task.obj_trans
+        for z_rot in self.config.task.obj_z_rot_lst:
             transform = pos_rot_to_matrix(
                 pos=torch.tensor(trans, device=self.device).unsqueeze(0),
                 rot=euler_angles_to_matrix(
@@ -215,8 +170,10 @@ class GraspExperiment:
         n_all = 0
 
         ############################ Process the objects in batch ############################
+
         for i_batch, object_code_list in enumerate(batched_object_code_list):
-            print(f"Batch: {i_batch + 1} / {len(batched_object_code_list)}")
+            logging.info(f"Batch: {i_batch + 1} / {len(batched_object_code_list)}")
+
             self.object_model.initialize(object_code_list)
             n_obj = len(object_code_list)
             right_hand_poses = torch.zeros(
@@ -323,7 +280,7 @@ class GraspExperiment:
             self.bimanual_pair.left.set_parameters(left_hand_poses.reshape(-1, left_hand_poses.shape[-1]))
 
             ############################ DEBUG Visualization ############################
-            if self.cfg.task.debug:
+            if self.config.task.debug:
                 for grasp_idx in range(3):
                     grasp_type = 1  # 0: pregrasp; 1: grasp; 2: squeeze
 
@@ -381,9 +338,9 @@ class GraspExperiment:
             )
             max_joint_violation = self.bimanual_pair.compute_joint_limits_violation()
 
-            thres_pen = self.cfg.task.thres.penetration
-            thres_spen = self.cfg.task.thres.self_penetration
-            thres_joint_limit = self.cfg.task.thres.joint_limit
+            thres_pen = self.config.task.thres.penetration
+            thres_spen = self.config.task.thres.self_penetration
+            thres_joint_limit = self.config.task.thres.joint_limit
 
             hand_valid = (
                 (energy_terms.penetration < thres_pen)
@@ -410,7 +367,7 @@ class GraspExperiment:
             n_all += valid.numel()
 
             ############################ Save arm-filtered grasp data ############################
-            save_dir = os.path.join(exp_path, self.cfg.task.save_dir)
+            save_dir = os.path.join(exp_path, self.config.task.save_dir)
 
             valid = valid.reshape(n_obj, n_samples_per_obj, 4)
             obj_pos, obj_quat = transformed_obj_poses[:, :3, 3], matrix_to_quaternion(transformed_obj_poses[:, :3, :3])
@@ -435,9 +392,10 @@ class GraspExperiment:
 
                             data_dict = copy.deepcopy(data_dict_lst_all_obj[i_obj][i_grasp])
                             data_dict["dual_arm_hand"] = d
-                            data_dict["obj_path"] = os.path.join(
-                                self.config.paths.data_root_path, object_code, "mesh", "simplified.obj"
+                            data_dict["obj_path"] = os.path.join(self.config.paths.data_root_path, object_code).replace(
+                                "../", ""
                             )
+                            # TODO: scene_path
 
                             np.save(save_path, data_dict)
                             logging.info(f"Save filtered grasp data to {save_path}.")
@@ -454,26 +412,26 @@ class GraspExperiment:
         self.setup_environment()
         self.setup_models()
         self.setup_energy()
-        # self.setup_logging()
 
         self.run_task(object_code_list)
 
 
 def task_arm_filter(cfg: DictConfig):
-    # merge cfg.hand.paths into cfg.paths
-    cfg.paths = OmegaConf.merge(cfg.paths, cfg.hand.paths)
-    cfg.hand_params = OmegaConf.merge(cfg.hand_params, cfg.hand.hand_params)
-    cfg.initialization = OmegaConf.merge(cfg.initialization, cfg.hand.initialization)
-
     # Object code list (keep as python list)
     if "object_code_list" in cfg:
-        if cfg.object_code_list:
-            object_code_list = OmegaConf.to_object(cfg.object_code_list)
-        else:
-            with open(cfg.object_code_path, "r") as f:
-                object_code_list = sorted(json.load(f))
+        object_code_list = OmegaConf.to_object(cfg.object_code_list)
+    else:
+        with open(cfg.object_code_path, "r") as f:
+            object_code_list = sorted(json.load(f))
 
     experiment = GraspExperiment(cfg)
     experiment.run_full_experiment(object_code_list)
+
+    # Check the saved files
+    exp_path = os.path.join(cfg.paths.experiments_base, cfg.name)
+    save_dir = os.path.join(exp_path, cfg.task.save_dir)
+    file_lst = glob.glob(os.path.join(save_dir, "**/*.npy"), recursive=True)
+    logging.info(f"Save {len(file_lst)} files (grasps) in {save_dir}.")
+    logging.info("Finish the filtering of bimanual grasps (no arms).")
 
     return

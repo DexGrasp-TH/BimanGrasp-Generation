@@ -1,6 +1,14 @@
+debug: False
+
 source_dir: "three_poses"
 save_dir: "arm_filtered"
-debug: False
+
+obj_trans: [0.5, 0.0, -0.2] # (x, y, z)
+obj_z_rot_lst: [-1.57, 0, 1.57, 3.14] # a list of angle
+
+ik:
+  num_retries: 20
+  regularlization: 1e-3
 
 thres:
   penetration: 0.01

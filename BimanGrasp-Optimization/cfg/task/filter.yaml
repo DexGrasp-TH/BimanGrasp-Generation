@@ -1,4 +1,5 @@
 source_dir: "three_poses"
+save_dir: "filtered"
 
 thres:
   penetration: 0.01

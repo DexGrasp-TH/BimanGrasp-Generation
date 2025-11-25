@@ -1,0 +1,17 @@
+debug: False
+source_dir: "arm_filtered"
+save_dir: "visualizations/arm"
+
+object_code_list:
+  - "ddg_gd_box_poisson_005"
+  - "core_bottle_fa452996a220dd49257c84a0e95a18b0"
+
+grasp_idx_lst: [0, 1]
+
+camera:
+  center: [0.5, 0.0, -0.2]
+  pos_lst: [
+            [1.5, -0.7, 0.1],
+            [1.5, 0.0, 0.1],
+            [1.5, 0.7, 0.1],
+           ]

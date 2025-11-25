@@ -1,6 +1,7 @@
-debug: false
-source_dir: "arm_filtered"
-save_dir: "visualizations/arm"
+debug: False
+
+source_dir: "results/intermediate"
+save_dir: "visualizations/opt_process"
 
 object_code_list:
   - "ddg_gd_box_poisson_005"
@@ -10,12 +11,5 @@ object_code_list:
   - "sem_CerealBox_fc6667707faff16544608b3255ca1886"
   - "mujoco_Hasbro_Monopoly_Hotels_Game"
 
-grasp_idx_lst: [0, 1, 2, 3, 4, 5, 6]
-
-camera:
-  center: [0.5, 0.0, -0.2]
-  pos_lst: [
-            [1.5, -0.7, 0.1],
-            [1.5, 0.0, 0.1],
-            [1.5, 0.7, 0.1],
-           ]
+grasp_idx_lst: [0, 1, 2, 3]
+opt_step_lst: [5, 10] # int
