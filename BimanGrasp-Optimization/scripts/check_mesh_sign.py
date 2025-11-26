@@ -8,7 +8,7 @@ import numpy as np
 
 device = "cuda:0"
 
-meshpath = "mjcf/dual_ur5_shadow/dual_ur5/dual_base.STL"
+meshpath = "mjcf/shadow/assets/f_distal_pst_cut_sm.obj"
 mesh = trimesh.load(meshpath)
 
 bbox = mesh.bounds  # shape (2,3): [[min_x, min_y, min_z], [max_x, max_y, max_z]]

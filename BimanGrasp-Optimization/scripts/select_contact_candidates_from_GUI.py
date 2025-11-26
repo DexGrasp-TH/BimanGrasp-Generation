@@ -13,11 +13,18 @@ from utils.hand_model import HandModel
 
 
 def main():
+    """
+    Manually select the contact candidate points via GUI.
+    The selection should be conducted for each link one by one.
+    You can click on the link mesh to select multiple contact candidates on this link sequentially.
+    They will replace the previous contact candidates for this link saved in the json file.
+    """
+
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow2/right_hand.xml"
-    contact_points_path = "mjcf/shadow2/right_hand_contact_points.json"
-    penetration_points_path = None
+    mjcf_path = "mjcf/shadow/right_hand.xml"
+    contact_points_path = "mjcf/shadow/right_hand_contact_points.json"
     device = "cuda:0"
+    target_link_name = "rh_thmiddle"  # Specify the target link name here
 
     # save an empty json file if no file exists
     if not os.path.exists(contact_points_path):
@@ -26,12 +33,11 @@ def main():
             json.dump(candidate_dict, f, indent=4)  # indent=4 makes it more readable
 
     hand_model = HandModel(
+        handedness="right_hand",
         mjcf_path=mjcf_path,
         contact_points_path=contact_points_path,
-        penetration_points_path=penetration_points_path,
         n_surface_points=2000,
         device=device,
-        handedness="right_hand",
     )
 
     hand_pos = torch.zeros((3,), device=device)
@@ -43,7 +49,8 @@ def main():
 
     hand_model.set_parameters(hand_pose, contact_point_indices)
 
-    ########### Visualize via plotly ###########
+    ########### Visualize the current contact candidates via plotly (web) ###########
+
     hand_en_plotly = hand_model.get_plotly_data(i=0, opacity=0.6, color="lightslategray", with_contact_points=True)
 
     fig = go.Figure(hand_en_plotly)
@@ -58,8 +65,7 @@ def main():
     )
     fig.show()
 
-    ########### Pick contact candidates via GUI ###########
-    target_link_name = "rh_thmiddle"
+    ########### Pick contact candidates via PyVista GUI ###########
 
     picked_points = hand_model.pick_contact_candidates(i=0, target_link_name=target_link_name)
 

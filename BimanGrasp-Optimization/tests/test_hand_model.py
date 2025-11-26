@@ -61,11 +61,11 @@ set_seed(42)
 
 
 def test():
-    cfg = OmegaConf.load("cfg/hand/shadow2.yaml")
+    cfg = OmegaConf.load("cfg/hand/shadow.yaml")
 
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow2/right_hand.xml"
-    contact_points_path = "mjcf/shadow2/right_hand_contact_points.json"
+    mjcf_path = "mjcf/shadow/right_hand.xml"
+    contact_points_path = "mjcf/shadow/right_hand_contact_points.json"
     penetration_points_path = None
     device = "cuda:0"
 
@@ -105,8 +105,8 @@ def test():
 
 def test_cal_distance():
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow2/left_hand.xml"
-    contact_points_path = "mjcf/shadow2/left_hand_contact_points.json"
+    mjcf_path = "mjcf/shadow/left_hand.xml"
+    contact_points_path = "mjcf/shadow/left_hand_contact_points.json"
     penetration_points_path = None
     device = "cuda:0"
 
@@ -165,8 +165,8 @@ def test_cal_distance():
 
 def test_self_penetration():
     # building the robot from a MJCF file
-    mjcf_path = "mjcf/shadow2/left_hand.xml"
-    contact_points_path = "mjcf/shadow2/left_hand_contact_points.json"
+    mjcf_path = "mjcf/shadow/left_hand.xml"
+    contact_points_path = "mjcf/shadow/left_hand_contact_points.json"
     penetration_points_path = None
     device = "cuda:0"
 

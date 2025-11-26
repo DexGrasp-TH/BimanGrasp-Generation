@@ -6,7 +6,7 @@ n_worker: 96
 defaults:
   - _self_
   - task: 
-  - hand: shadow2
+  - hand: shadow
   - dual_arm_hand: dual_ur5_shadow
 
 task_name: ${hydra:runtime.choices.task}

@@ -9,7 +9,7 @@ spec.option.timestep = 0.004
 spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
 spec.option.disableflags = mujoco.mjtDisableBit.mjDSBL_GRAVITY
 
-xml_path = "mjcf/shadow2/right_hand.xml"
+xml_path = "mjcf/shadow/right_hand.xml"
 
 # Read hand xml
 child_spec = mujoco.MjSpec.from_file(xml_path)

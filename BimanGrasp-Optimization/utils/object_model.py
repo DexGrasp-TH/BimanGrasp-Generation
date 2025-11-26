@@ -151,7 +151,7 @@ class ObjectModel:
         if self.num_samples > 0:
             self.surface_points_tensor = torch.stack(self.surface_points_tensor, dim=0)
             # Repeat for each batch item: (n_objects * batch_size_each, num_samples, 3)
-            # Note that these points are not scaled and transformed according to the object scale and poses
+            # Note that these points are not scaled or transformed according to the object scale and poses
             self.surface_points_tensor = self.surface_points_tensor.repeat_interleave(self.batch_size_each, dim=0)
 
     def set_parameters(self, poses):
