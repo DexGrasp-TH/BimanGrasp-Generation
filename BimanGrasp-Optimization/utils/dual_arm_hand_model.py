@@ -480,6 +480,9 @@ class DualArmHandModel:
                 points[-1] = points[-1].expand(batch_size, n_surface_points, 3)
         points = torch.cat(points, dim=-2).to(self.device)
 
+        if batch_size == 1:  # ensure the shape is (N_batch, N_points, 3)
+            points = points.unsqueeze(0)
+
         return points
 
     def get_global_surface_points(self):

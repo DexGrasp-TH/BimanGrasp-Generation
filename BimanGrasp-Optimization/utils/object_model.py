@@ -147,15 +147,12 @@ class ObjectModel:
 
         # Stack tensors for batch processing
         self.object_scale_tensor = torch.stack(self.object_scale_tensor, dim=0)
-        a = 1
 
-        # TODO: support object surface points
-        # if self.num_samples > 0:
-        #     self.surface_points_tensor = torch.stack(self.surface_points_tensor, dim=0)
-        #     # Repeat for each batch item: (n_objects * batch_size_each, num_samples, 3)
-        #     self.surface_points_tensor = self.surface_points_tensor.repeat_interleave(self.batch_size_each, dim=0)
-
-        # return dense_point_cloud
+        if self.num_samples > 0:
+            self.surface_points_tensor = torch.stack(self.surface_points_tensor, dim=0)
+            # Repeat for each batch item: (n_objects * batch_size_each, num_samples, 3)
+            # Note that these points are not scaled and transformed according to the object scale and poses
+            self.surface_points_tensor = self.surface_points_tensor.repeat_interleave(self.batch_size_each, dim=0)
 
     def set_parameters(self, poses):
         """
@@ -163,6 +160,22 @@ class ObjectModel:
         """
         self.global_rotation = poses[:, :3, :3]
         self.global_translation = poses[:, :3, 3]
+
+    def get_global_surface_points(self):
+        """
+        Return surface points in world frame.
+        """
+        # Scale the surface points.
+        surface_points = self.surface_points_tensor * self.object_scale_tensor.unsqueeze(1)
+
+        # Transform the surface points into the world frame.
+        global_rotation = self.global_rotation.unsqueeze(1).repeat(1, self.num_samples, 1, 1).view(-1, 3, 3)
+        global_translation = self.global_translation.unsqueeze(1).repeat(1, self.num_samples, 1).view(-1, 1, 3)
+        surface_points = (surface_points.view(-1, 1, 3) @ global_rotation.transpose(1, 2) + global_translation).view(
+            -1, self.num_samples, 3
+        )
+
+        return surface_points
 
     def calculate_distance(self, x, with_closest_points=False):
         """

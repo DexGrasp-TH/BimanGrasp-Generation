@@ -1,8 +1,14 @@
+object_code_list: ["core_bottle_1a7ba1f4c892e2da30711cdbdbc73924"]
 
-dir: "three_poses" # 'results' or 'results/intermediate' or 'three_poses'
+# # hand grasp data
+# source_dir: "three_poses" # 'results/final' or 'results/intermediate' or 'three_poses'
+# grasp_indices: [0]
+# opt_steps: [10] # only used to show intermediate optimization results
 
-object_code_list: ["ddg_gd_box_poisson_005"]
-grasp_indices: [0]
-opt_steps: [10]
+# dula-arm-hand grasp data
+source_dir: "arm_filtered"
+grasp_indices: ["grasp_0_pose_1"]
+
+
 
 
