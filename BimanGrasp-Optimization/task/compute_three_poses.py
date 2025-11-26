@@ -259,7 +259,18 @@ class GraspExperiment:
 
         ############# Process the objects in batch #############
 
-        for i_batch, object_code_list in enumerate(batched_object_code_list):
+        for i_batch, object_code_list_ in enumerate(batched_object_code_list):
+            # Check if the grasp files of the objects exist
+            object_code_list = []
+            for object_code in object_code_list_:
+                data_path = os.path.join(source_path, f"{object_code}.npy")
+                if os.path.exists(data_path):
+                    object_code_list.append(object_code)
+                else:
+                    logging.warning(f"Grasp file of {object_code} does not exist.")
+            if len(object_code_list) == 0:
+                continue
+
             self.object_model.initialize(object_code_list)
             n_obj = len(object_code_list)
             right_hand_poses = torch.zeros((n_obj, n_samples_per_obj, 9 + len(right_joint_names)), device=self.device)
@@ -270,9 +281,8 @@ class GraspExperiment:
             data_dict_lst_all_obj = []
             for i_obj, object_code in enumerate(object_code_list):
                 # load synthesized grasps
-                data_dict_lst = np.load(os.path.join(source_path, f"{object_code}.npy"), allow_pickle=True)[
-                    :n_samples_per_obj
-                ]
+                data_path = os.path.join(source_path, f"{object_code}.npy")
+                data_dict_lst = np.load(data_path, allow_pickle=True)[:n_samples_per_obj]
                 data_dict_lst_all_obj.append(data_dict_lst)
 
                 for i_grasp, data_dict in enumerate(data_dict_lst):

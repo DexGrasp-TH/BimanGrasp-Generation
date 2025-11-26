@@ -137,7 +137,7 @@ class GraspExperiment:
         """
 
         exp_path = os.path.join(self.config.paths.experiments_base, self.config.name)
-        result_path = os.path.join(exp_path, self.config.task.source_dir)
+        source_path = os.path.join(exp_path, self.config.task.source_dir)
 
         ############################ Object list preparation ############################
 
@@ -171,7 +171,18 @@ class GraspExperiment:
 
         ############################ Process the objects in batch ############################
 
-        for i_batch, object_code_list in enumerate(batched_object_code_list):
+        for i_batch, object_code_list_ in enumerate(batched_object_code_list):
+            # Check if the grasp files of the objects exist
+            object_code_list = []
+            for object_code in object_code_list_:
+                data_path = os.path.join(source_path, f"{object_code}.npy")
+                if os.path.exists(data_path):
+                    object_code_list.append(object_code)
+                else:
+                    logging.warning(f"Grasp file of {object_code} does not exist.")
+            if len(object_code_list) == 0:
+                continue
+
             logging.info(f"Batch: {i_batch + 1} / {len(batched_object_code_list)}")
 
             self.object_model.initialize(object_code_list)
@@ -185,7 +196,7 @@ class GraspExperiment:
             data_dict_lst_all_obj = []
             for i_obj, object_code in enumerate(object_code_list):
                 # load synthesized grasps
-                data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)[
+                data_dict_lst = np.load(os.path.join(source_path, f"{object_code}.npy"), allow_pickle=True)[
                     :n_samples_per_obj
                 ]
                 data_dict_lst_all_obj.append(data_dict_lst)

@@ -32,6 +32,13 @@ from typing import List
 import json
 
 
+def split_by_max_size(obj_list, max_object_per_batch):
+    """
+    Split obj_list into batches with at most max_object_per_batch items each.
+    """
+    return [obj_list[i : i + max_object_per_batch] for i in range(0, len(obj_list), max_object_per_batch)]
+
+
 class GraspExperiment:
     """
     Main experiment class for bimanual grasp generation.
@@ -294,10 +301,22 @@ def task_synthesize(config: DictConfig):
     This program runs on a single GPU.
     """
 
-    # Print configuration summary
+    ################## Object code list ##################
+
+    if "object_code_list" in config:
+        all_object_code_list = OmegaConf.to_object(config.object_code_list)
+    else:
+        with open(config.object_code_path, "r") as f:
+            all_object_code_list = sorted(json.load(f))
+
+    n_samples_per_obj = config.model.batch_size
+    max_object_per_batch = config.model.max_total_batch_size // n_samples_per_obj
+    batched_object_code_list = split_by_max_size(all_object_code_list, max_object_per_batch)
+
+    ################## Print configuration summary ##################
+
     print("=== Experiment Configuration ===")
     print(f"Name: {config.name}")
-    print(f"Objects: {len(config.object_code_list)} objects")
     print(f"Batch size: {config.model.batch_size} per object")
     print(f"iterations: {config.task.optimizer.num_iterations}")
     print(
@@ -308,26 +327,9 @@ def task_synthesize(config: DictConfig):
     print(f"Langevin noise: {config.task.optimizer.langevin_noise_factor}")
     print("=" * 45)
 
-    # Run experiment
+    ################## Run experiment ##################
+
     experiment = GraspExperiment(config)
-
-    n_samples_per_obj = config.model.batch_size
-    max_object_per_batch = config.model.max_total_batch_size // n_samples_per_obj
-
-    def split_by_max_size(obj_list, max_object_per_batch):
-        """
-        Split obj_list into batches with at most max_object_per_batch items each.
-        """
-        return [obj_list[i : i + max_object_per_batch] for i in range(0, len(obj_list), max_object_per_batch)]
-
-    if "object_code_list" in config:
-        object_code_list = OmegaConf.to_object(config.object_code_list)
-    else:
-        with open(config.object_code_path, "r") as f:
-            object_code_list = sorted(json.load(f))
-
-    all_object_code_list = config.task.object_code_list
-    batched_object_code_list = split_by_max_size(all_object_code_list, max_object_per_batch)
 
     for i_batch, object_code_list in enumerate(batched_object_code_list):
         print("\n=========================================")

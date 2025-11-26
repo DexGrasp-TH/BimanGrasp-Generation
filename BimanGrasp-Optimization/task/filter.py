@@ -96,7 +96,7 @@ class GraspExperiment:
         """
 
         exp_path = os.path.join(self.config.paths.experiments_base, self.config.name)
-        result_path = os.path.join(exp_path, self.config.task.source_dir)
+        source_path = os.path.join(exp_path, self.config.task.source_dir)
 
         right_joint_names = self.bimanual_pair.right.get_joint_names()
         left_joint_names = self.bimanual_pair.left.get_joint_names()
@@ -112,7 +112,18 @@ class GraspExperiment:
 
         n_valid = 0
         n_all = 0
-        for i_batch, object_code_list in enumerate(batched_object_code_list):
+        for i_batch, object_code_list_ in enumerate(batched_object_code_list):
+            # Check if the grasp files of the objects exist
+            object_code_list = []
+            for object_code in object_code_list_:
+                data_path = os.path.join(source_path, f"{object_code}.npy")
+                if os.path.exists(data_path):
+                    object_code_list.append(object_code)
+                else:
+                    logging.warning(f"Grasp file of {object_code} does not exist.")
+            if len(object_code_list) == 0:
+                continue
+
             self.object_model.initialize(object_code_list)
             n_obj = len(object_code_list)
             right_hand_poses = torch.zeros(
@@ -125,7 +136,7 @@ class GraspExperiment:
             data_dict_lst_all_obj = []
             for i_obj, object_code in enumerate(object_code_list):
                 # load synthesized grasps
-                data_dict_lst = np.load(os.path.join(result_path, f"{object_code}.npy"), allow_pickle=True)[
+                data_dict_lst = np.load(os.path.join(source_path, f"{object_code}.npy"), allow_pickle=True)[
                     :n_samples_per_obj
                 ]
                 data_dict_lst_all_obj.append(data_dict_lst)
@@ -206,7 +217,7 @@ class GraspExperiment:
                         save_path = os.path.join(save_dir, object_code, f"grasp_{i_grasp}.npy")
                         os.makedirs(os.path.dirname(save_path), exist_ok=True)
                         np.save(save_path, data_dict_lst_all_obj[i_obj][i_grasp])
-                        logging.info(f"Save filtered grasp data to {save_path}.")
+                        logging.info(f"Batch {i_batch} - Save filtered grasp data to {save_path}.")
 
         logging.info("===============================================")
         logging.info(f"Passed grasp ratio (all): {n_valid / n_all}.")
