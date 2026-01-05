@@ -126,17 +126,23 @@ def save_grasp_images(params):
         right_hand_mesh = right_hand_model.get_trimesh_data(
             i=i_plot, rgba=[0.467, 0.533, 0.600, 0.7], with_contact_points=False, with_axes=False
         )
+        # left_hand_mesh = left_hand_model.get_trimesh_data(
+        #     i=i_plot, rgba=[0.941, 0.502, 0.502, 0.7], with_contact_points=False, with_axes=False
+        # )
         left_hand_mesh = left_hand_model.get_trimesh_data(
-            i=i_plot, rgba=[0.941, 0.502, 0.502, 0.7], with_contact_points=False, with_axes=False
+            i=i_plot, rgba=[0.467, 0.533, 0.600, 0.7], with_contact_points=False, with_axes=False
         )
         object_model.object_scale_tensor[0] = obj_scale
-        object_mesh = object_model.get_trimesh_data(i=0, rgba=[1.0, 0.961, 0.933, 0.5])
+        # object_mesh = object_model.get_trimesh_data(i=0, rgba=[1.0, 0.961, 0.933, 0.5])
+        object_mesh = object_model.get_trimesh_data(i=0, rgba=[1.0, 0.498, 0.314, 0.5])
         axis_mesh = create_colored_axes(origin_size=0.005, axis_length=1.0, radius=0.002)
 
-        all_meshes = right_hand_mesh + left_hand_mesh + [object_mesh] + axis_mesh
+        # all_meshes = right_hand_mesh + left_hand_mesh + [object_mesh] + axis_mesh
+        all_meshes = right_hand_mesh + left_hand_mesh + [object_mesh]
 
         # Create pyrender scene
-        scene = pyrender.Scene(bg_color=[226 / 255, 240 / 255, 217 / 255, 1.0])
+        # scene = pyrender.Scene(bg_color=[226 / 255, 240 / 255, 217 / 255, 1.0])
+        scene = pyrender.Scene(bg_color=[1.0, 1.0, 1.0, 1.0])
 
         # Add all mesh
         for m in all_meshes:

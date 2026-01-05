@@ -24,7 +24,7 @@ def main():
     mjcf_path = "mjcf/shadow/right_hand.xml"
     contact_points_path = "mjcf/shadow/right_hand_contact_points.json"
     device = "cuda:0"
-    target_link_name = "rh_thmiddle"  # Specify the target link name here
+    target_link_name = "rh_ffdistal"  # Specify the target link name here
 
     # save an empty json file if no file exists
     if not os.path.exists(contact_points_path):

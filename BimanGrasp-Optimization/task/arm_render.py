@@ -87,10 +87,12 @@ def save_grasp_images(params):
     object_mesh = object_model.get_trimesh_data(i=0, rgba=[1.0, 0.498, 0.314, 0.5])
     axis_mesh = create_colored_axes(origin_size=0.005, axis_length=1.0, radius=0.002)
 
-    all_meshes = robot_mesh + [object_mesh] + axis_mesh
+    # all_meshes = robot_mesh + [object_mesh] + axis_mesh
+    all_meshes = robot_mesh + [object_mesh]
 
     # 创建 pyrender 场景
-    scene = pyrender.Scene(bg_color=[226 / 255, 240 / 255, 217 / 255, 1.0])  # 背景色 #E2F0D9\
+    # scene = pyrender.Scene(bg_color=[226 / 255, 240 / 255, 217 / 255, 1.0])  # 背景色 #E2F0D9\
+    scene = pyrender.Scene(bg_color=[1.0, 1.0, 1.0, 1.0])
 
     # 添加所有 mesh
     for m in all_meshes:

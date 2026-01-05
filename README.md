@@ -76,7 +76,7 @@ data/object/DGN_2k
 
 ### Hand Preprocess
 
-The parameters of hands should be specified in `BimanGrasp-Optimization/cfg/hand/`.
+The parameters of hands should be specified in `BimanGrasp-Optimization/cfg/hand/`. The MJCF (XML) file of the hand must be provided in `BimanGrasp-Optimization/mjcf`.
 
 The code has currently been tested only on the provided Shadow Hand settings, but theoretically it can be applied to any hand.
 
@@ -92,6 +92,12 @@ The TorchSDF cannot correctly process meshes with acute angles between adjacent 
 For example, the contact candidate points on Shadow Hands are specified in `BimanGrasp-Optimization/mjcf/shadow/right_hand_contact_points.json`.
 
 You can manually select contact candidates via GUI, using `BimanGrasp-Optimization/scripts/select_contact_candidates_from_GUI.py`.
+
+#### Dual-arm-hand
+
+The parameters of dual-arm-hand robots should be specified in `BimanGrasp-Optimization/cfg/dual_arm_hand/`. The MJCF (XML) file of the robot must be provided in `BimanGrasp-Optimization/mjcf`. Please make sure the definitions of hands in the dual-arm-hand robot MJCF are consistent with those in the hand MJCF used for bimanual hand grasp synthesis.
+
+Since the computation of Jacobian via Pytorch Kinematics Library is incorrect when using MJCF file, the URDF file of the robot should also be provided. Please make sure the URDF definition is consistent with the MJCF definition. You can use `BimanGrasp-Optimization/BimanGrasp-Optimization/scripts/check_urdf_mjcf.py` to check it. Note that minor inconsistencies in unimportant links are acceptable, since the URDF is used only for kinematic IK solving and not for collision checking.
 
 
 ### Grasp Synthesis
